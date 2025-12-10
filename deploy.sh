@@ -118,6 +118,11 @@ log_info "Copying frontend to nginx root..."
 ssh ${VPS_USER}@${VPS_IP} "rm -rf /var/www/cham-cong-fe/* && cp -r ~/cham-cong-fe/dist/* /var/www/cham-cong-fe/" 2>/dev/null
 log_success "Frontend files copied to web root"
 
+# 5️⃣.5️⃣ Copy Rails master key for credentials decryption
+log_info "Copying Rails master key..."
+scp ${LOCAL_FRONTEND_PATH}/../cham-cong-be/config/master.key ${VPS_USER}@${VPS_IP}:~/cham-cong-be/config/ 2>/dev/null || log_warning "Master key might already exist"
+log_success "Rails master key ensured"
+
 # 6️⃣ Install backend dependencies (already done above, skip this)
 log_info "Backend dependencies already installed (via bundle install)"
 log_success "Backend dependencies ready"
