@@ -200,6 +200,26 @@ server {
     root /var/www/cham-cong-fe;
     index index.html;
     
+    # Add proper MIME types for JavaScript and other assets
+    types {
+        text/html html;
+        text/css css;
+        application/javascript js;
+        application/wasm wasm;
+        image/svg+xml svg;
+        font/woff woff;
+        font/woff2 woff2;
+        font/ttf ttf;
+        application/octet-stream eot;
+        image/x-icon ico;
+        image/png png;
+        image/jpeg jpg jpeg;
+        image/gif gif;
+    }
+    
+    default_type application/octet-stream;
+    charset utf-8;
+    
     # Cache static files
     location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
         expires 30d;
