@@ -175,6 +175,7 @@ pm2 delete all || true
 pm2 start \
   --name timekeep-api \
   --env "RAILS_ENV=production" \
+  --env "SECRET_KEY_BASE=a1317054554ad6910e5ce650309f912bdcfbcfed2e0785b73d796a2d4907ffc3a127e331e683b58da600017936a2ee0efcfb216ec57d5eb68198a70ba694c53f" \
   --env "DATABASE_USERNAME=postgres" \
   --env "DATABASE_PASSWORD=postgres" \
   --env "DATABASE_HOST=localhost" \
