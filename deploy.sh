@@ -79,6 +79,18 @@ git pull origin main
 GITPULL
 log_success "Backend and frontend code updated"
 
+# 3️⃣.25️⃣ Fix Rails production config for HTTP backend behind nginx proxy
+log_info "Ensuring Rails config is correct for proxy setup..."
+ssh ${VPS_USER}@${VPS_IP} << 'RAILSCONFIG'
+cd ~/cham-cong-be
+
+# Make sure force_ssl is disabled (nginx handles HTTPS)
+sed -i 's/config\.force_ssl = true/config.force_ssl = false/' config/environments/production.rb
+sed -i 's/# config\.assume_ssl = true/config.assume_ssl = true/' config/environments/production.rb
+
+RAILSCONFIG
+log_success "Rails production config fixed"
+
 # 3️⃣.5️⃣ Fix Ruby version in Gemfile (match VPS Ruby 3.0.2)
 log_info "Updating Gemfile Ruby version to 3.0.2..."
 ssh ${VPS_USER}@${VPS_IP} << 'GEMFILE'
