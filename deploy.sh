@@ -110,12 +110,13 @@ if [ ! -d "${LOCAL_FRONTEND_PATH}/dist" ]; then
     cd ${LOCAL_FRONTEND_PATH}
     npm run build
 fi
-scp -r ${LOCAL_FRONTEND_PATH}/dist/* ${VPS_USER}@${VPS_IP}:~/${FRONTEND_PATH}/ 2>/dev/null || log_warning "Frontend deploy might have issues"
+# Copy dist folder to ~/frontend-dist/ on VPS
+scp -r ${LOCAL_FRONTEND_PATH}/dist ${VPS_USER}@${VPS_IP}:~/frontend-dist 2>/dev/null || log_warning "Frontend deploy might have issues"
 log_success "Frontend deployed"
 
-# 5️⃣ Copy frontend dist to nginx root
-log_info "Copying frontend to nginx root..."
-ssh ${VPS_USER}@${VPS_IP} "rm -rf /var/www/cham-cong-fe/* && cp -r ~/cham-cong-fe/dist/* /var/www/cham-cong-fe/" 2>/dev/null
+# 5️⃣ Copy frontend dist to nginx root (ONLY dist contents, no source files)
+log_info "Copying frontend dist to nginx root..."
+ssh ${VPS_USER}@${VPS_IP} "rm -rf /var/www/cham-cong-fe/* && cp -r ~/frontend-dist/* /var/www/cham-cong-fe/ && chmod -R 755 /var/www/cham-cong-fe"
 log_success "Frontend files copied to web root"
 
 # 5️⃣.5️⃣ Copy Rails master key for credentials decryption
@@ -198,8 +199,7 @@ ssh ${VPS_USER}@${VPS_IP} << 'NGINX_SETUP'
 # Create /var/www directory
 mkdir -p /var/www/cham-cong-fe
 
-# Copy files
-cp -r ~/cham-cong-fe/* /var/www/cham-cong-fe/ 2>/dev/null || true
+# NOTE: Frontend dist files already copied in step 5, no need to copy again
 
 # Set permissions
 chmod -R 755 /var/www/cham-cong-fe
