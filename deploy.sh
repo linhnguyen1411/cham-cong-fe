@@ -200,7 +200,7 @@ server {
     root /var/www/cham-cong-fe;
     index index.html;
     
-    # Add proper MIME types for JavaScript and other assets
+    # Explicitly set MIME types
     types {
         text/html html;
         text/css css;
@@ -216,12 +216,24 @@ server {
         image/jpeg jpg jpeg;
         image/gif gif;
     }
-    
     default_type application/octet-stream;
-    charset utf-8;
     
-    # Cache static files
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+    # Fix JavaScript MIME type specifically
+    location ~ \.js$ {
+        add_header Content-Type "application/javascript; charset=utf-8";
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+    }
+    
+    # CSS files
+    location ~ \.css$ {
+        add_header Content-Type "text/css; charset=utf-8";
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+    }
+    
+    # Cache other static files
+    location ~* \.(png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
         expires 30d;
         add_header Cache-Control "public, immutable";
     }
@@ -229,6 +241,7 @@ server {
     # Serve index.html for SPA routing
     location / {
         try_files $uri $uri/ /index.html;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
     }
     
     # Proxy API calls to backend
