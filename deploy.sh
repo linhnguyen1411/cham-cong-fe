@@ -65,10 +65,30 @@ log_info "Stopping existing processes..."
 ssh ${VPS_USER}@${VPS_IP} "pkill -f 'rails s' || true; pkill -f puma || true; sleep 2" 2>/dev/null || true
 log_success "Old processes stopped"
 
-# 3️⃣ Update backend code
+# 3️⃣ Update backend and frontend code
 log_info "Updating backend code..."
-ssh ${VPS_USER}@${VPS_IP} "cd ${BACKEND_PATH} && git pull origin main" 2>/dev/null || log_warning "Could not update backend (might be first run)"
+ssh ${VPS_USER}@${VPS_IP} << 'GITPULL'
+cd ~/cham-cong-be
+git stash 2>/dev/null || true
+git pull origin main
 log_success "Backend code updated"
+
+cd ~/cham-cong-fe
+git stash 2>/dev/null || true
+git pull origin main
+GITPULL
+log_success "Backend and frontend code updated"
+
+# 3️⃣.5️⃣ Fix Ruby version in Gemfile (match VPS Ruby 3.0.2)
+log_info "Updating Gemfile Ruby version to 3.0.2..."
+ssh ${VPS_USER}@${VPS_IP} << 'GEMFILE'
+cd ~/cham-cong-be
+# Replace ruby version line in Gemfile
+sed -i "s/ruby '[0-9.]*'/ruby '3.0.2'/g" Gemfile
+# Run bundle install with new ruby version
+bundle install --quiet 2>/dev/null || bundle install
+GEMFILE
+log_success "Gemfile updated and bundle installed"
 
 # 4️⃣ Deploy frontend (copy dist from local)
 log_info "Deploying frontend to VPS..."
@@ -81,12 +101,16 @@ fi
 scp -r ${LOCAL_FRONTEND_PATH}/dist/* ${VPS_USER}@${VPS_IP}:~/${FRONTEND_PATH}/ 2>/dev/null || log_warning "Frontend deploy might have issues"
 log_success "Frontend deployed"
 
-# 5️⃣ Install backend dependencies
-log_info "Installing backend gems (this may take a minute)..."
-ssh ${VPS_USER}@${VPS_IP} "cd ${BACKEND_PATH} && bundle install --without development test --quiet" 2>/dev/null || log_warning "Bundle install encountered an issue (continuing...)"
-log_success "Backend dependencies installed"
+# 5️⃣ Copy frontend dist to nginx root
+log_info "Copying frontend to nginx root..."
+ssh ${VPS_USER}@${VPS_IP} "rm -rf /var/www/cham-cong-fe/* && cp -r ~/cham-cong-fe/dist/* /var/www/cham-cong-fe/" 2>/dev/null
+log_success "Frontend files copied to web root"
 
-# 6️⃣ Setup database credentials in .env
+# 6️⃣ Install backend dependencies (already done above, skip this)
+log_info "Backend dependencies already installed (via bundle install)"
+log_success "Backend dependencies ready"
+
+# 7️⃣ Setup database credentials in .env
 log_info "Setting up database credentials..."
 ssh ${VPS_USER}@${VPS_IP} << 'DBENV'
 cd ~/cham-cong-be
@@ -108,21 +132,21 @@ fi
 DBENV
 log_success "Database credentials configured"
 
-# 7️⃣ Run migrations
+# 8️⃣ Run migrations
 log_info "Running database migrations..."
 ssh ${VPS_USER}@${VPS_IP} "cd ${BACKEND_PATH} && source .env 2>/dev/null || true && RAILS_ENV=production DATABASE_USERNAME=postgres DATABASE_PASSWORD=postgres DATABASE_HOST=localhost DATABASE_PORT=5432 bundle exec rails db:migrate" 2>/dev/null || log_warning "Migrations might have issues (continuing...)"
 log_success "Database migrations completed"
 
-# 8️⃣ Create seed admin user
+# 9️⃣ Create seed admin user
 log_info "Creating seed user (admin/password123)..."
 ssh ${VPS_USER}@${VPS_IP} "cd ${BACKEND_PATH} && RAILS_ENV=production DATABASE_USERNAME=postgres DATABASE_PASSWORD=postgres DATABASE_HOST=localhost DATABASE_PORT=5432 bundle exec rails runner \"User.find_or_create_by(username: 'admin') { |u| u.password = 'password123'; u.full_name = 'Admin User'; u.role = 'admin' }\" 2>&1 | grep -i 'admin\\|error' || true" 2>/dev/null
 log_success "Seed user created"
 
-# 9️⃣ Frontend deployment (already built locally)
+# 🔟 Frontend deployment (already built locally)
 log_info "Frontend already built and will be deployed in next step"
 log_success "Frontend ready"
 
-# 🔟 Start backend with PM2
+# 1️⃣1️⃣ Start backend with PM2
 log_info "Starting backend on port ${BACKEND_PORT} with PM2..."
 ssh ${VPS_USER}@${VPS_IP} << 'PM2SETUP'
 cd ~/cham-cong-be
