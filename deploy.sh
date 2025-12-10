@@ -171,16 +171,16 @@ cd ~/cham-cong-be
 # Delete old PM2 process
 pm2 delete all || true
 
-# Start with proper environment variables from .env
-pm2 start \
-  --name timekeep-api \
-  --env "RAILS_ENV=production" \
-  --env "SECRET_KEY_BASE=a1317054554ad6910e5ce650309f912bdcfbcfed2e0785b73d796a2d4907ffc3a127e331e683b58da600017936a2ee0efcfb216ec57d5eb68198a70ba694c53f" \
-  --env "DATABASE_USERNAME=postgres" \
-  --env "DATABASE_PASSWORD=postgres" \
-  --env "DATABASE_HOST=localhost" \
-  --env "DATABASE_PORT=5432" \
-  'bundle exec rails s -p 3001 -e production'
+# Export environment variables BEFORE starting PM2
+export RAILS_ENV=production
+export SECRET_KEY_BASE=a1317054554ad6910e5ce650309f912bdcfbcfed2e0785b73d796a2d4907ffc3a127e331e683b58da600017936a2ee0efcfb216ec57d5eb68198a70ba694c53f
+export DATABASE_USERNAME=postgres
+export DATABASE_PASSWORD=postgres
+export DATABASE_HOST=localhost
+export DATABASE_PORT=5432
+
+# Start with environment variables already in shell
+pm2 start 'bundle exec rails s -p 3001 -e production' --name timekeep-api
 
 sleep 2
 pm2 status
