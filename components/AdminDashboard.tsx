@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { AlertTriangle, Clock, Filter, TrendingUp, Search, X } from 'lucide-react';
+import { AlertTriangle, Clock, Filter, TrendingUp, Search, X, Plus } from 'lucide-react';
+import { CreateUserModal } from './CreateUserModal';
 
 interface User {
   id: string;
@@ -53,6 +54,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [attendanceFilter, setAttendanceFilter] = useState<AttendanceFilterType>('all');
   const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [isCreateUserModalOpen, setIsCreateUserModalOpen] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   // Calculate stats per staff
   const staffStats = useMemo(() => {
@@ -208,12 +211,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-bold text-slate-800 mb-1">
-          Tổng quan nhân viên
-        </h3>
-        <p className="text-sm text-slate-500 mb-4">
-          Hiển thị: {getDateFilterLabel()}
-        </p>
+        <div className="flex justify-between items-start mb-4">
+          <div>
+            <h3 className="text-lg font-bold text-slate-800 mb-1">
+              Tổng quan nhân viên
+            </h3>
+            <p className="text-sm text-slate-500">
+              Hiển thị: {getDateFilterLabel()}
+            </p>
+          </div>
+          <button
+            onClick={() => setIsCreateUserModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition"
+          >
+            <Plus size={20} />
+            Tạo Người Dùng
+          </button>
+        </div>
         
         <div className="mb-4 relative">
           <Search size={18} className="absolute left-3 top-3 text-slate-400" />
@@ -450,6 +464,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           )}
         </div>
       )}
+
+      <CreateUserModal
+        isOpen={isCreateUserModalOpen}
+        onClose={() => setIsCreateUserModalOpen(false)}
+        onSuccess={() => {
+          setRefreshTrigger(prev => prev + 1);
+          // Trigger a refresh of users in parent component
+          window.location.reload();
+        }}
+      />
     </div>
   );
 };

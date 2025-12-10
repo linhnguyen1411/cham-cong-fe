@@ -6,10 +6,21 @@ const STORAGE_KEYS = {
 };
 
 // CẤU HÌNH URL API
-// Ưu tiên biến môi trường. Mặc định dùng IPv4 127.0.0.1 để tránh lỗi phân giải DNS trên một số máy.
-// URL này trỏ đến root server (không bao gồm /api/v1)
-export const BASE_URL = (process.env.REACT_APP_API_URL || 'http://127.0.0.1:3000').replace(/\/$/, '');
-const API_URL = `${BASE_URL}/api/v1`;
+// Ưu tiên:
+// 1. window.API_BASE_URL (set từ server qua config.js)
+// 2. process.env.REACT_APP_API_URL (environment variable)
+// 3. Default localhost:3000
+const getBaseUrl = () => {
+  if (typeof window !== 'undefined' && (window as any).API_BASE_URL) {
+    return (window as any).API_BASE_URL;
+  }
+  return (process.env.REACT_APP_API_URL || 'http://127.0.0.1:3000').replace(/\/$/, '');
+};
+
+export const BASE_URL = getBaseUrl();
+// If BASE_URL is just '/api', that's the Nginx proxy endpoint
+// Otherwise append '/api/v1' for direct connection
+const API_URL = BASE_URL === '/api' ? `${BASE_URL}/v1` : `${BASE_URL}/api/v1`;
 
 // --- HELPERS ---
 
@@ -52,28 +63,37 @@ const handleResponse = async (response: Response) => {
         throw new Error("Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.");
     }
 
+    // Read response body ONCE into text first
+    let responseText = '';
+    try {
+        responseText = await response.text();
+    } catch (e) {
+        throw new Error("Không thể đọc response từ server");
+    }
+
     if (!response.ok) {
         let errorMessage = `Lỗi ${response.status}`;
+        
+        // Try to parse as JSON first
         try {
-            const errData = await response.json();
+            const errData = JSON.parse(responseText);
             errorMessage = errData.message || errData.error || JSON.stringify(errData);
         } catch (e) {
-             const text = await response.text();
-             // Xử lý trường hợp Rails trả về HTML (lỗi routing hoặc ngrok warning sót)
-             if (text.includes("<!DOCTYPE html>")) {
-                 errorMessage = `Lỗi Server (Trả về HTML thay vì JSON). Kiểm tra lại URL API: ${API_URL}`;
-             } else {
-                 errorMessage = text || response.statusText;
-             }
+            // Not JSON - check if it's HTML
+            if (responseText.includes("<!DOCTYPE html>")) {
+                errorMessage = `Lỗi Server (Trả về HTML thay vì JSON). Kiểm tra lại URL API: ${API_URL}`;
+            } else {
+                errorMessage = responseText || response.statusText;
+            }
         }
         throw new Error(errorMessage);
     }
 
-    // Xử lý JSON an toàn
+    // Parse JSON from the text we already read
     try {
-        const text = await response.text();
-        return text ? JSON.parse(text) : {};
+        return responseText ? JSON.parse(responseText) : {};
     } catch (e) {
+        console.error("JSON parse error:", e, "Response text:", responseText);
         throw new Error("Dữ liệu trả về không phải JSON hợp lệ.");
     }
 };
@@ -209,6 +229,28 @@ export const getUsers = async (): Promise<User[]> => {
         console.error("Get users failed:", e);
         return [];
     }
+};
+
+export const createUser = async (userData: {
+    username: string;
+    password: string;
+    passwordConfirmation: string;
+    fullName: string;
+    role: 'admin' | 'staff';
+}): Promise<User> => {
+    const data = await fetchAPI('/users', {
+        method: 'POST',
+        body: JSON.stringify({
+            user: {
+                username: userData.username,
+                password: userData.password,
+                password_confirmation: userData.passwordConfirmation,
+                full_name: userData.fullName,
+                role: userData.role
+            }
+        })
+    });
+    return mapUserFromApi(data);
 };
 
 export const checkIn = async (userId: string): Promise<WorkSession> => {
