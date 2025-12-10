@@ -102,7 +102,7 @@ bundle install --quiet 2>/dev/null || bundle install
 GEMFILE
 log_success "Gemfile updated and bundle installed"
 
-# 4️⃣ Deploy frontend (copy dist from local)
+# 4️⃣ Deploy frontend (copy dist from local directly to nginx root)
 log_info "Deploying frontend to VPS..."
 if [ ! -d "${LOCAL_FRONTEND_PATH}/dist" ]; then
     log_error "Frontend dist folder not found at ${LOCAL_FRONTEND_PATH}/dist"
@@ -110,14 +110,13 @@ if [ ! -d "${LOCAL_FRONTEND_PATH}/dist" ]; then
     cd ${LOCAL_FRONTEND_PATH}
     npm run build
 fi
-# Copy dist folder to ~/frontend-dist/ on VPS
-scp -r ${LOCAL_FRONTEND_PATH}/dist ${VPS_USER}@${VPS_IP}:~/frontend-dist 2>/dev/null || log_warning "Frontend deploy might have issues"
-log_success "Frontend deployed"
+# Clean nginx root and copy dist files directly
+ssh ${VPS_USER}@${VPS_IP} "rm -rf /var/www/cham-cong-fe/* && mkdir -p /var/www/cham-cong-fe"
+scp -r ${LOCAL_FRONTEND_PATH}/dist/* ${VPS_USER}@${VPS_IP}:/var/www/cham-cong-fe/
+ssh ${VPS_USER}@${VPS_IP} "chmod -R 755 /var/www/cham-cong-fe"
+log_success "Frontend deployed to nginx root"
 
-# 5️⃣ Copy frontend dist to nginx root (ONLY dist contents, no source files)
-log_info "Copying frontend dist to nginx root..."
-ssh ${VPS_USER}@${VPS_IP} "rm -rf /var/www/cham-cong-fe/* && cp -r ~/frontend-dist/* /var/www/cham-cong-fe/ && chmod -R 755 /var/www/cham-cong-fe"
-log_success "Frontend files copied to web root"
+# 5️⃣ (Removed - frontend already copied above)
 
 # 5️⃣.5️⃣ Copy Rails master key for credentials decryption
 log_info "Copying Rails master key..."
