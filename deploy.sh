@@ -95,12 +95,21 @@ log_success "Rails production config fixed"
 log_info "Updating Gemfile Ruby version to 3.0.2..."
 ssh ${VPS_USER}@${VPS_IP} << 'GEMFILE'
 cd ~/cham-cong-be
-# Replace ruby version line in Gemfile
-sed -i "s/ruby '[0-9.]*'/ruby '3.0.2'/g" Gemfile
-# Run bundle install with new ruby version
-bundle install --quiet 2>/dev/null || bundle install
+
+# Restore Gemfile from git first (undo any previous bad edits)
+git checkout Gemfile 2>/dev/null || true
+
+# Replace ruby version (handles both single and double quotes)
+sed -i 's/ruby "[0-9.]*"/ruby "3.0.2"/' Gemfile
+sed -i "s/ruby '[0-9.]*'/ruby '3.0.2'/" Gemfile
+
+# Delete Gemfile.lock to force regeneration
+rm -f Gemfile.lock
+
+# Run bundle install
+bundle install
 GEMFILE
-log_success "Gemfile updated and bundle installed"
+log_success "Gemfile updated to Ruby 3.0.2 and bundle installed"
 
 # 4️⃣ Deploy frontend (copy dist from local directly to nginx root)
 log_info "Deploying frontend to VPS..."
