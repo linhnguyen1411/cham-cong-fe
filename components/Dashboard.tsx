@@ -425,6 +425,109 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onShowSettings }) =>
                     )}
                 </div>
 
+                {/* Charts Grid for Admin */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Bar Chart - Tổng giờ làm */}
+                    <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                        <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center">
+                            <TrendingUp size={20} className="mr-2 text-blue-500"/>
+                            Tổng giờ làm việc ({dateFilter === 'today' ? 'Hôm nay' : dateFilter === 'week' ? '7 ngày' : dateFilter === 'month' ? 'Tháng này' : dateFilter === 'month30' ? '30 ngày' : 'Tất cả'})
+                        </h3>
+                        <div className="h-72 w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={stats} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                                    <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} dy={10} />
+                                    <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
+                                    <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
+                                    <Bar dataKey="hours" name="Giờ làm" radius={[4, 4, 0, 0]} barSize={40}>
+                                        {stats.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={entry.hours >= 8 ? '#3b82f6' : '#94a3b8'} />
+                                        ))}
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+
+                    {/* Pie Chart - Phân bổ thời gian */}
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex flex-col">
+                        <h3 className="text-lg font-bold text-slate-800 mb-2 flex items-center">
+                            <Users size={20} className="mr-2 text-purple-500"/>
+                            Phân bổ thời gian
+                        </h3>
+                        <div className="flex-1 min-h-[280px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie
+                                        data={pieData}
+                                        cx="50%"
+                                        cy="50%"
+                                        innerRadius={60}
+                                        outerRadius={80}
+                                        paddingAngle={5}
+                                        dataKey="value"
+                                    >
+                                        {pieData.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={entry.color} />
+                                        ))}
+                                    </Pie>
+                                    <Tooltip />
+                                    <Legend verticalAlign="bottom" height={36}/>
+                                </PieChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Second Row Charts for Admin */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Check-in Time Trend */}
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                        <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center">
+                            <Clock size={20} className="mr-2 text-orange-500"/>
+                            Xu hướng giờ check-in
+                        </h3>
+                        <div className="h-64 w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <LineChart data={lineData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
+                                    <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} dy={10}/>
+                                    <YAxis domain={[6, 11]} hide={false} axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} label={{ value: 'Giờ', angle: -90, position: 'insideLeft' }}/>
+                                    <Tooltip formatter={(value: number) => `${Math.floor(value)}:${Math.round((value % 1) * 60).toString().padStart(2, '0')}`} />
+                                    <Line type="monotone" dataKey="time" stroke="#f97316" strokeWidth={3} dot={{r: 4, fill: '#f97316', strokeWidth: 2, stroke: '#fff'}} />
+                                </LineChart>
+                            </ResponsiveContainer>
+                        </div>
+                        <p className="text-xs text-center text-slate-400 mt-2">Biểu đồ giờ check-in trung bình</p>
+                    </div>
+
+                    {/* Top Employees by Hours */}
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                        <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center">
+                            <Users size={20} className="mr-2 text-indigo-500"/>
+                            Top nhân viên chăm chỉ
+                        </h3>
+                        <div className="h-64 w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart layout="vertical" data={topEmployees} margin={{ top: 0, right: 30, left: 40, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9"/>
+                                    <XAxis type="number" hide />
+                                    <YAxis dataKey="name" type="category" width={100} tick={{fontSize: 12}} interval={0} />
+                                    <Tooltip cursor={{fill: 'transparent'}} />
+                                    <Bar dataKey="hours" fill="#6366f1" radius={[0, 4, 4, 0]} barSize={20}>
+                                        <Cell fill="#4f46e5" />
+                                        <Cell fill="#6366f1" />
+                                        <Cell fill="#818cf8" />
+                                        <Cell fill="#a5b4fc" />
+                                        <Cell fill="#c7d2fe" />
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+                </div>
+
                 {/* Admin Staff List */}
                 <AdminDashboard allUsers={allUsers} sessions={sessions} dateFilter={dateFilter} />
             </>
