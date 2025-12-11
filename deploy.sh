@@ -18,7 +18,8 @@ FRONTEND_PATH="cham-cong-fe"
 BACKEND_PORT="3001"
 FRONTEND_PORT="5173"
 SSH_TIMEOUT="60"
-LOCAL_FRONTEND_PATH="/Users/linhnguyen21/workspace/timekeep-pro"
+LOCAL_FRONTEND_PATH="/Users/linhnguyen21/workspace/cham-cong/cham-cong-fe"
+LOCAL_BACKEND_PATH="/Users/linhnguyen21/workspace/cham-cong/cham-cong-be"
 VPS_WWW_PATH="/var/www/cham-cong-fe"
 
 # Functions
@@ -129,7 +130,7 @@ log_success "Frontend deployed to nginx root"
 
 # 5️⃣.5️⃣ Copy Rails master key for credentials decryption
 log_info "Copying Rails master key..."
-scp ${LOCAL_FRONTEND_PATH}/../cham-cong-be/config/master.key ${VPS_USER}@${VPS_IP}:~/cham-cong-be/config/ 2>/dev/null || log_warning "Master key might already exist"
+scp ${LOCAL_BACKEND_PATH}/config/master.key ${VPS_USER}@${VPS_IP}:~/cham-cong-be/config/ 2>/dev/null || log_warning "Master key might already exist"
 log_success "Rails master key ensured"
 
 # 6️⃣ Install backend dependencies (already done above, skip this)

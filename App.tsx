@@ -6,6 +6,9 @@ import { TimeTracker } from './components/TimeTracker';
 import { History } from './components/History';
 import { Dashboard } from './components/Dashboard';
 import { ShiftSettings } from './components/ShiftSettings';
+import { StaffManagement } from './components/StaffManagement';
+import { DepartmentSettings } from './components/DepartmentSettings';
+import ProfileSettings from './components/ProfileSettings';
 import { User } from './types';
 import * as api from './services/api';
 
@@ -13,6 +16,7 @@ const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [view, setView] = useState('tracker'); // dashboard, tracker, history, shift-settings
   const [isLoading, setIsLoading] = useState(true);
+  const [showProfileSettings, setShowProfileSettings] = useState(false);
 
   useEffect(() => {
     // Check for existing session in storage (LocalStorage or SessionStorage)
@@ -42,6 +46,14 @@ const App: React.FC = () => {
     setView('shift-settings');
   };
 
+  const handleProfileUpdated = async () => {
+    // Reload user info after profile update
+    const authData = api.getCurrentUser();
+    if (authData) {
+      setUser(authData.user);
+    }
+  };
+
   if (isLoading) {
     return <div className="min-h-screen flex items-center justify-center text-blue-600">Loading...</div>;
   }
@@ -56,11 +68,22 @@ const App: React.FC = () => {
       currentView={view} 
       onNavigate={setView} 
       onLogout={handleLogout}
+      onOpenProfile={() => setShowProfileSettings(true)}
     >
       {view === 'dashboard' && <Dashboard user={user} onShowSettings={handleShowSettings} />}
       {view === 'tracker' && <TimeTracker user={user} />}
       {view === 'history' && <History user={user} />}
+      {view === 'department-settings' && <DepartmentSettings />}
       {view === 'shift-settings' && <ShiftSettings />}
+      {view === 'staff-management' && <StaffManagement />}
+      
+      {showProfileSettings && (
+        <ProfileSettings
+          userId={user.id}
+          onClose={() => setShowProfileSettings(false)}
+          onProfileUpdated={handleProfileUpdated}
+        />
+      )}
     </Layout>
   );
 };

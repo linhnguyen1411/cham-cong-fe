@@ -1,6 +1,6 @@
 import React from 'react';
 import { User, UserRole } from '../types';
-import { LayoutDashboard, Clock, History, LogOut, User as UserIcon, Settings } from 'lucide-react';
+import { LayoutDashboard, Clock, History, LogOut, User as UserIcon, Settings, UserCog, Users, Building2 } from 'lucide-react';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -8,9 +8,10 @@ interface LayoutProps {
   currentView: string;
   onNavigate: (view: string) => void;
   onLogout: () => void;
+  onOpenProfile?: () => void;
 }
 
-export const Layout: React.FC<LayoutProps> = ({ children, user, currentView, onNavigate, onLogout }) => {
+export const Layout: React.FC<LayoutProps> = ({ children, user, currentView, onNavigate, onLogout, onOpenProfile }) => {
   
   const NavItem = ({ view, icon: Icon, label }: { view: string, icon: any, label: string }) => (
     <button
@@ -43,19 +44,31 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, currentView, onN
           )}
           <NavItem view="history" icon={History} label="Lịch sử" />
           {user.role === UserRole.ADMIN && (
-            <NavItem view="shift-settings" icon={Settings} label="Cài đặt ca làm việc" />
+            <>
+              <NavItem view="department-settings" icon={Building2} label="Quản lý Khối" />
+              <NavItem view="shift-settings" icon={Settings} label="Cài đặt ca làm việc" />
+              <NavItem view="staff-management" icon={Users} label="Quản lý nhân viên" />
+            </>
           )}
         </nav>
 
         <div className="p-4 border-t border-slate-100">
-          <div className="flex items-center mb-4 px-2">
-            <div className="w-10 h-10 rounded-full bg-slate-200 overflow-hidden mr-3">
-               <img src={user.avatar} alt="User" className="w-full h-full object-cover" />
+          <div 
+            className="flex items-center mb-4 px-2 cursor-pointer hover:bg-slate-50 rounded-lg py-2 transition"
+            onClick={onOpenProfile}
+          >
+            <div className="w-10 h-10 rounded-full bg-slate-200 overflow-hidden mr-3 flex items-center justify-center">
+               {user.avatar ? (
+                 <img src={user.avatar} alt="User" className="w-full h-full object-cover" />
+               ) : (
+                 <UserIcon size={20} className="text-slate-400" />
+               )}
             </div>
-            <div>
-              <p className="text-sm font-semibold text-slate-800">{user.username}</p>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-slate-800">{user.fullName}</p>
               <p className="text-xs text-slate-500">{user.role === UserRole.ADMIN ? 'Quản trị viên' : 'Nhân viên'}</p>
             </div>
+            <UserCog size={16} className="text-slate-400" />
           </div>
           <button 
             onClick={onLogout}
@@ -89,6 +102,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, currentView, onN
           <button onClick={() => onNavigate('tracker')} className={`p-2 rounded-full ${currentView === 'tracker' ? 'text-blue-600 bg-blue-50' : 'text-slate-400'}`}><Clock size={24}/></button>
          )}
          <button onClick={() => onNavigate('history')} className={`p-2 rounded-full ${currentView === 'history' ? 'text-blue-600 bg-blue-50' : 'text-slate-400'}`}><History size={24}/></button>
+         <button onClick={onOpenProfile} className="p-2 rounded-full text-slate-400 hover:text-blue-600 hover:bg-blue-50"><UserCog size={24}/></button>
       </div>
     </div>
   );

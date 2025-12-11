@@ -33,7 +33,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-fade-in relative">
         
         <div className="p-8 text-center bg-slate-50 border-b border-slate-100">
-          <h1 className="text-2xl font-bold text-blue-600 mb-2">TimeKeep Pro</h1>
+          <h1 className="text-2xl font-bold text-blue-600 mb-2">Hệ Thống Chấm Công - Minh Trần Holdings</h1>
           <p className="text-slate-500 text-sm">Đăng nhập hệ thống chấm công</p>
         </div>
         

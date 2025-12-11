@@ -1,5 +1,5 @@
 
-import { User, WorkSession, AuthResponse, UserRole, WorkShift } from '../types';
+import { User, WorkSession, AuthResponse, UserRole, WorkShift, Branch, Department } from '../types';
 
 const STORAGE_KEYS = {
   CURRENT_USER: 'timekeep_user'
@@ -141,7 +141,32 @@ const mapUserFromApi = (data: any): User => ({
   username: data.username,
   fullName: data.full_name || data.fullName || data.username,
   role: (data.role && String(data.role).toLowerCase() === 'admin') ? UserRole.ADMIN : UserRole.STAFF,
-  avatar: data.avatar || `https://ui-avatars.com/api/?name=${data.username}&background=random`
+  avatar: data.avatar_url || data.avatar || `https://ui-avatars.com/api/?name=${data.username}&background=random`,
+  branchId: data.branch_id ? String(data.branch_id) : undefined,
+  branchName: data.branch_name || undefined,
+  branchAddress: data.branch_address || undefined,
+  departmentId: data.department_id ? String(data.department_id) : undefined,
+  departmentName: data.department_name || undefined,
+  workAddress: data.work_address || undefined,
+  address: data.address || undefined,
+  phone: data.phone || undefined,
+  birthday: data.birthday || undefined
+});
+
+const mapBranchFromApi = (data: any): Branch => ({
+  id: String(data.id),
+  name: data.name,
+  address: data.address,
+  description: data.description || undefined,
+  usersCount: data.users_count || 0
+});
+
+const mapDepartmentFromApi = (data: any): Department => ({
+  id: String(data.id),
+  name: data.name,
+  description: data.description || undefined,
+  usersCount: data.users_count || 0,
+  shiftsCount: data.shifts_count || 0
 });
 
 const mapSessionFromApi = (data: any): WorkSession => {
@@ -165,6 +190,7 @@ const mapSessionFromApi = (data: any): WorkSession => {
   const mapped = {
     id: String(data.id),
     userId: String(data.user_id || data.userId),
+    userName: data.user_name || data.userName || undefined,
     startTime: startTime,
     endTime: endTime,
     duration: duration,
@@ -218,6 +244,23 @@ export const logout = () => {
 
 export const getCurrentUser = (): AuthResponse | null => {
   return getStoredAuth();
+};
+
+export const updateStoredUser = (updatedUser: Partial<User>) => {
+  const auth = getStoredAuth();
+  if (auth) {
+    const newAuth = {
+      ...auth,
+      user: { ...auth.user, ...updatedUser }
+    };
+    // Update both storages
+    if (localStorage.getItem(STORAGE_KEYS.CURRENT_USER)) {
+      localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(newAuth));
+    }
+    if (sessionStorage.getItem(STORAGE_KEYS.CURRENT_USER)) {
+      sessionStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(newAuth));
+    }
+  }
 };
 
 export const getUsers = async (): Promise<User[]> => {
@@ -330,12 +373,15 @@ const mapShiftFromApi = (data: any): WorkShift => ({
   startTime: data.start_time || data.startTime || '08:00',
   endTime: data.end_time || data.endTime || '17:00',
   lateThreshold: data.late_threshold || data.lateThreshold || 30,
+  departmentId: data.department_id ? String(data.department_id) : undefined,
+  departmentName: data.department_name || undefined,
   createdAt: data.created_at || data.createdAt
 });
 
-export const getWorkShifts = async (): Promise<WorkShift[]> => {
+export const getWorkShifts = async (departmentId?: string): Promise<WorkShift[]> => {
     try {
-        const data = await fetchAPI('/work_shifts');
+        const url = departmentId ? `/work_shifts?department_id=${departmentId}` : '/work_shifts';
+        const data = await fetchAPI(url);
         const result = Array.isArray(data) ? data.map(mapShiftFromApi) : (data?.shifts ? data.shifts.map(mapShiftFromApi) : []);
         return result;
     } catch (e) {
@@ -352,14 +398,15 @@ export const createWorkShift = async (shift: Omit<WorkShift, 'id' | 'createdAt'>
                 name: shift.name,
                 start_time: shift.startTime,
                 end_time: shift.endTime,
-                late_threshold: shift.lateThreshold
+                late_threshold: shift.lateThreshold,
+                department_id: shift.departmentId ? Number(shift.departmentId) : null
             }
         })
     });
     return mapShiftFromApi(data);
 };
 
-export const updateWorkShift = async (id: string, shift: Omit<WorkShift, 'id' | 'createdAt'>): Promise<WorkShift> => {
+export const updateWorkShift = async (id: string, shift: Partial<WorkShift>): Promise<WorkShift> => {
     const data = await fetchAPI(`/work_shifts/${id}`, {
         method: 'PATCH',
         body: JSON.stringify({ 
@@ -367,7 +414,8 @@ export const updateWorkShift = async (id: string, shift: Omit<WorkShift, 'id' | 
                 name: shift.name,
                 start_time: shift.startTime,
                 end_time: shift.endTime,
-                late_threshold: shift.lateThreshold
+                late_threshold: shift.lateThreshold,
+                department_id: shift.departmentId ? Number(shift.departmentId) : null
             }
         })
     });
@@ -378,4 +426,251 @@ export const deleteWorkShift = async (id: string): Promise<void> => {
     await fetchAPI(`/work_shifts/${id}`, {
         method: 'DELETE'
     });
+};
+
+// --- PROFILE API ---
+
+export interface ProfileData {
+  fullName: string;
+  address?: string;
+  phone?: string;
+  birthday?: string;
+}
+
+export interface UserProfile extends ProfileData {
+  id: string;
+  username: string;
+  role: UserRole;
+  avatarUrl?: string;
+}
+
+export const getUserProfile = async (userId: string): Promise<UserProfile> => {
+  const data = await fetchAPI(`/users/${userId}`);
+  return {
+    id: String(data.id),
+    username: data.username,
+    fullName: data.full_name || '',
+    role: data.role === 'admin' ? UserRole.ADMIN : UserRole.STAFF,
+    address: data.address || '',
+    phone: data.phone || '',
+    birthday: data.birthday || '',
+    avatarUrl: data.avatar_url || ''
+  };
+};
+
+export const updateProfile = async (userId: string, profile: ProfileData): Promise<UserProfile> => {
+  const data = await fetchAPI(`/users/${userId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      user: {
+        full_name: profile.fullName,
+        address: profile.address,
+        phone: profile.phone,
+        birthday: profile.birthday
+      }
+    })
+  });
+  return {
+    id: String(data.id),
+    username: data.username,
+    fullName: data.full_name || '',
+    role: data.role === 'admin' ? UserRole.ADMIN : UserRole.STAFF,
+    address: data.address || '',
+    phone: data.phone || '',
+    birthday: data.birthday || '',
+    avatarUrl: data.avatar_url || ''
+  };
+};
+
+export const updatePassword = async (userId: string, currentPassword: string, newPassword: string): Promise<{ message: string }> => {
+  return await fetchAPI(`/users/${userId}/update_password`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      current_password: currentPassword,
+      password: newPassword
+    })
+  });
+};
+
+export const uploadAvatar = async (userId: string, file: File): Promise<{ avatar_url: string }> => {
+  const formData = new FormData();
+  formData.append('avatar', file);
+
+  const auth = getStoredAuth();
+  const headers: Record<string, string> = {};
+  if (auth?.token) {
+    headers['Authorization'] = `Bearer ${auth.token}`;
+  }
+
+  const response = await fetch(`${API_URL}/users/${userId}/update_avatar`, {
+    method: 'POST',
+    headers,
+    body: formData
+  });
+
+
+  const text = await response.text();
+  
+  if (!response.ok) {
+    // Try to parse as JSON, otherwise use text as error
+    try {
+      const error = JSON.parse(text);
+      throw new Error(error.error || 'Upload failed');
+    } catch {
+      throw new Error(text.includes('<html') ? 'Server error - vui lòng thử lại' : text);
+    }
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error('Invalid response from server');
+  }
+};
+
+// --- BRANCH MANAGEMENT (ADMIN) ---
+
+export const getBranches = async (): Promise<Branch[]> => {
+  try {
+    const data = await fetchAPI('/branches');
+    return Array.isArray(data) ? data.map(mapBranchFromApi) : [];
+  } catch (e) {
+    console.error("Get branches failed:", e);
+    return [];
+  }
+};
+
+export const getBranch = async (id: string): Promise<Branch | null> => {
+  try {
+    const data = await fetchAPI(`/branches/${id}`);
+    return mapBranchFromApi(data);
+  } catch (e) {
+    console.error("Get branch failed:", e);
+    return null;
+  }
+};
+
+export const createBranch = async (branch: Omit<Branch, 'id' | 'usersCount'>): Promise<Branch> => {
+  const data = await fetchAPI('/branches', {
+    method: 'POST',
+    body: JSON.stringify({
+      branch: {
+        name: branch.name,
+        address: branch.address,
+        description: branch.description
+      }
+    })
+  });
+  return mapBranchFromApi(data);
+};
+
+export const updateBranch = async (id: string, branch: Partial<Branch>): Promise<Branch> => {
+  const data = await fetchAPI(`/branches/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      branch: {
+        name: branch.name,
+        address: branch.address,
+        description: branch.description
+      }
+    })
+  });
+  return mapBranchFromApi(data);
+};
+
+export const deleteBranch = async (id: string): Promise<void> => {
+  await fetchAPI(`/branches/${id}`, { method: 'DELETE' });
+};
+
+// --- STAFF MANAGEMENT (ADMIN) ---
+
+export const getAllStaff = async (): Promise<User[]> => {
+  try {
+    const data = await fetchAPI('/users');
+    return Array.isArray(data) ? data.map(mapUserFromApi) : [];
+  } catch (e) {
+    console.error("Get all staff failed:", e);
+    return [];
+  }
+};
+
+export const getStaffById = async (id: string): Promise<User | null> => {
+  try {
+    const data = await fetchAPI(`/users/${id}`);
+    return mapUserFromApi(data);
+  } catch (e) {
+    console.error("Get staff failed:", e);
+    return null;
+  }
+};
+
+export const updateStaff = async (id: string, userData: Partial<User>): Promise<User> => {
+  const data = await fetchAPI(`/users/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      user: {
+        full_name: userData.fullName,
+        role: userData.role?.toLowerCase(),
+        branch_id: userData.branchId ? Number(userData.branchId) : null,
+        department_id: userData.departmentId ? Number(userData.departmentId) : null,
+        work_address: userData.workAddress,
+        address: userData.address,
+        phone: userData.phone,
+        birthday: userData.birthday
+      }
+    })
+  });
+  return mapUserFromApi(data);
+};
+
+// --- DEPARTMENT MANAGEMENT (ADMIN) ---
+
+export const getDepartments = async (): Promise<Department[]> => {
+  try {
+    const data = await fetchAPI('/departments');
+    return Array.isArray(data) ? data.map(mapDepartmentFromApi) : [];
+  } catch (e) {
+    console.error("Get departments failed:", e);
+    return [];
+  }
+};
+
+export const getDepartment = async (id: string): Promise<Department | null> => {
+  try {
+    const data = await fetchAPI(`/departments/${id}`);
+    return mapDepartmentFromApi(data);
+  } catch (e) {
+    console.error("Get department failed:", e);
+    return null;
+  }
+};
+
+export const createDepartment = async (department: Omit<Department, 'id' | 'usersCount' | 'shiftsCount'>): Promise<Department> => {
+  const data = await fetchAPI('/departments', {
+    method: 'POST',
+    body: JSON.stringify({
+      department: {
+        name: department.name,
+        description: department.description
+      }
+    })
+  });
+  return mapDepartmentFromApi(data);
+};
+
+export const updateDepartment = async (id: string, department: Partial<Department>): Promise<Department> => {
+  const data = await fetchAPI(`/departments/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      department: {
+        name: department.name,
+        description: department.description
+      }
+    })
+  });
+  return mapDepartmentFromApi(data);
+};
+
+export const deleteDepartment = async (id: string): Promise<void> => {
+  await fetchAPI(`/departments/${id}`, { method: 'DELETE' });
 };

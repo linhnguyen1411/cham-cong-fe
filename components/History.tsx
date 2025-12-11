@@ -131,7 +131,7 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
                   </td>
                   {user.role === UserRole.ADMIN && (
                       <td className="px-6 py-4 text-slate-600">
-                          {session.userId === '1' ? 'Admin' : 'Staff'}
+                          {session.userName || 'Unknown'}
                       </td>
                   )}
                   <td className="px-6 py-4 text-slate-600 font-mono text-sm">
