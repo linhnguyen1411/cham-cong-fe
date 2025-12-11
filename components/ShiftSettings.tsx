@@ -231,12 +231,12 @@ export const ShiftSettings: React.FC = () => {
 
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
-                Ngưỡng tính muộn (phút) - Mặc định 30 phút
+                Ngưỡng tính muộn (phút)
               </label>
               <input
                 type="number"
                 value={formData.lateThreshold}
-                onChange={(e) => setFormData({ ...formData, lateThreshold: parseInt(e.target.value) || 30 })}
+                onChange={(e) => setFormData({ ...formData, lateThreshold: e.target.value === '' ? 0 : parseInt(e.target.value) })}
                 min="0"
                 max="120"
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
