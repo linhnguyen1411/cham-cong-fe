@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Users, ChevronLeft, ChevronRight, Loader2, X, Phone } from 'lucide-react';
-import { User, ShiftRegistration, ShiftRegistrationStatus } from '../types';
-import { getShiftRegistrations, getWorkShifts, getUsers } from '../services/api';
+import { User, ShiftRegistration, ShiftRegistrationStatus, Position } from '../types';
+import { getShiftRegistrations, getWorkShifts, getUsers, getPositions } from '../services/api';
 
 interface Props {
   user: User;
@@ -15,6 +15,7 @@ const StaffSchedule: React.FC<Props> = ({ user }) => {
   const [registrations, setRegistrations] = useState<ShiftRegistration[]>([]);
   const [availableShifts, setAvailableShifts] = useState<any[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [positions, setPositions] = useState<Position[]>([]);
   const [selectedWeek, setSelectedWeek] = useState<string>('');
   const [error, setError] = useState('');
   const [modalData, setModalData] = useState<{
@@ -33,13 +34,15 @@ const StaffSchedule: React.FC<Props> = ({ user }) => {
       setLoading(true);
       setError('');
       
-      // Load all shifts and users
-      const [shifts, users] = await Promise.all([
+      // Load all shifts, users, and positions
+      const [shifts, users, positionsData] = await Promise.all([
         getWorkShifts(),
-        getUsers()
+        getUsers(),
+        getPositions()
       ]);
       setAvailableShifts(shifts);
       setAllUsers(users);
+      setPositions(positionsData);
       
       // Load approved registrations for selected week
       if (selectedWeek) {
@@ -90,20 +93,39 @@ const StaffSchedule: React.FC<Props> = ({ user }) => {
     return `${date.getDate()}/${date.getMonth() + 1}`;
   };
 
-  const getRegsForDayAndShift = (dateStr: string, shiftId: string): ShiftRegistration[] => {
-    return registrations.filter(r => r.workDate === dateStr && r.workShiftId === shiftId);
+  const getRegsForDayAndShift = (dateStr: string, shiftId: string, positionId?: string): ShiftRegistration[] => {
+    let regs = registrations.filter(r => r.workDate === dateStr && r.workShiftId === shiftId);
+    
+    // Filter by position if specified
+    if (positionId) {
+      if (positionId === 'no-position') {
+        // Filter for users without position
+        regs = regs.filter(reg => {
+          const user = allUsers.find(u => u.id === reg.userId);
+          return !user?.positionId;
+        });
+      } else {
+        // Filter for users with specific position
+        regs = regs.filter(reg => {
+          const user = allUsers.find(u => u.id === reg.userId);
+          return user?.positionId === positionId;
+        });
+      }
+    }
+    
+    return regs;
   };
 
-  const getStaffCountForDayAndShift = (dateStr: string, shiftId: string): number => {
-    return getRegsForDayAndShift(dateStr, shiftId).length;
+  const getStaffCountForDayAndShift = (dateStr: string, shiftId: string, positionId?: string): number => {
+    return getRegsForDayAndShift(dateStr, shiftId, positionId).length;
   };
 
-  const getStaffNamesForDayAndShift = (dateStr: string, shiftId: string): string[] => {
-    return getRegsForDayAndShift(dateStr, shiftId).map(r => r.userName || '');
+  const getStaffNamesForDayAndShift = (dateStr: string, shiftId: string, positionId?: string): string[] => {
+    return getRegsForDayAndShift(dateStr, shiftId, positionId).map(r => r.userName || '');
   };
 
-  const getStaffDetailsForDayAndShift = (dateStr: string, shiftId: string): Array<{ name: string; phone?: string }> => {
-    const regs = getRegsForDayAndShift(dateStr, shiftId);
+  const getStaffDetailsForDayAndShift = (dateStr: string, shiftId: string, positionId?: string): Array<{ name: string; phone?: string }> => {
+    const regs = getRegsForDayAndShift(dateStr, shiftId, positionId);
     return regs.map(reg => {
       const user = allUsers.find(u => u.id === reg.userId);
       return {
@@ -112,9 +134,40 @@ const StaffSchedule: React.FC<Props> = ({ user }) => {
       };
     });
   };
+  
+  // Get users by position
+  const getUsersByPosition = (positionId?: string): User[] => {
+    if (!positionId || positionId === 'no-position') {
+      return allUsers.filter(u => !u.positionId);
+    }
+    return allUsers.filter(u => u.positionId === positionId);
+  };
+  
+  // Get all positions including "No Position" (null)
+  const getAllPositionsWithNull = (): Array<Position & { id: string; name: string }> => {
+    const result: Array<Position & { id: string; name: string }> = [...positions];
+    
+    // Add "No Position" if there are users without position
+    const usersWithoutPosition = allUsers.filter(u => !u.positionId);
+    if (usersWithoutPosition.length > 0) {
+      result.push({
+        id: 'no-position',
+        name: 'Chưa phân vị trí',
+        description: undefined,
+        branchId: undefined,
+        branchName: undefined,
+        departmentId: undefined,
+        departmentName: undefined,
+        level: 0,
+        usersCount: usersWithoutPosition.length
+      } as Position & { id: string; name: string });
+    }
+    
+    return result;
+  };
 
-  const handleCellClick = (dateStr: string, dateLabel: string, shiftName: string, shiftId: string) => {
-    const staff = getStaffDetailsForDayAndShift(dateStr, shiftId);
+  const handleCellClick = (dateStr: string, dateLabel: string, shiftName: string, shiftId: string, positionId?: string) => {
+    const staff = getStaffDetailsForDayAndShift(dateStr, shiftId, positionId);
     if (staff.length > 0) {
       setModalData({ date: dateStr, dateLabel, shiftName, staff });
     }
@@ -196,162 +249,214 @@ const StaffSchedule: React.FC<Props> = ({ user }) => {
         </div>
       ) : (
         <>
-          {/* Desktop: Grid View */}
-          <div className="hidden md:block bg-white rounded-xl shadow-sm border overflow-hidden">
-            {/* Header */}
-            <div className="grid grid-cols-8 border-b bg-gray-50 sticky top-0 z-10">
-              <div className="p-3 font-semibold text-gray-700 border-r">Ca</div>
-              {WEEKDAYS.map((day, idx) => {
-                const date = weekDates[idx];
-                const isToday = date && date.toDateString() === new Date().toDateString();
-                return (
-                  <div
-                    key={day}
-                    className={`p-3 text-center border-r ${isToday ? 'bg-indigo-50' : ''}`}
-                  >
-                    <div className={`text-xs font-medium ${isToday ? 'text-indigo-600' : 'text-gray-600'}`}>
-                      {day}
-                    </div>
-                    {date && (
-                      <div className={`text-sm font-bold ${isToday ? 'text-indigo-600' : 'text-gray-900'}`}>
-                        {date.getDate()}
-                      </div>
-                    )}
+          {/* Desktop: Multiple Tables by Position */}
+          <div className="hidden md:block space-y-6">
+            {getAllPositionsWithNull().map((position) => {
+              const positionUsers = getUsersByPosition(position.id === 'no-position' ? undefined : position.id);
+              const hasUsers = positionUsers.length > 0;
+              
+              return (
+                <div key={position.id} className="bg-white rounded-xl shadow-sm border overflow-hidden">
+                  {/* Position Header */}
+                  <div className="bg-gradient-to-r from-blue-50 to-cyan-50 border-b p-4">
+                    <h2 className="text-lg font-bold text-gray-900">{position.name}</h2>
+                    <p className="text-sm text-gray-600 mt-1">
+                      {positionUsers.length} nhân viên
+                    </p>
                   </div>
-                );
-              })}
-            </div>
-
-            {/* Body */}
-            <div className="divide-y">
-              {availableShifts.map((shift) => (
-                <div key={shift.id} className="grid grid-cols-8 hover:bg-gray-50">
-                  {/* Shift Name */}
-                  <div className="p-3 border-r font-medium text-gray-900 flex items-center">
-                    {shift.name}
-                  </div>
-
-                  {/* Day Columns */}
-                  {WEEKDAYS.map((_, dayIdx) => {
-                    const dateStr = formatDateForAPI(weekDates[dayIdx]);
-                    const date = weekDates[dayIdx];
-                    const count = getStaffCountForDayAndShift(dateStr, String(shift.id));
-                    const staffNames = getStaffNamesForDayAndShift(dateStr, String(shift.id));
-                    const staffDetails = getStaffDetailsForDayAndShift(dateStr, String(shift.id));
-                    const dateLabel = `${WEEKDAY_FULL[dayIdx]}, ${formatDate(date)}`;
-                    
-                    return (
-                      <div 
-                        key={dayIdx} 
-                        className="p-3 border-r text-center relative group"
-                      >
-                        {count > 0 ? (
-                          <button
-                            onClick={() => handleCellClick(dateStr, dateLabel, shift.name, String(shift.id))}
-                            className="w-full flex flex-col items-center gap-1 hover:bg-blue-50 rounded-lg p-2 transition-colors cursor-pointer"
-                          >
-                            <div className="flex items-center gap-1.5">
-                              <Users className="w-4 h-4 text-blue-600" />
-                              <span className="font-bold text-blue-600 text-lg">{count}</span>
-                            </div>
-                            <div className="text-xs text-gray-600 max-w-full">
-                              <div className="truncate">
-                                {staffNames.slice(0, 2).join(', ')}
-                                {staffNames.length > 2 && ` +${staffNames.length - 2}`}
+                  
+                  {hasUsers ? (
+                    <>
+                      {/* Table Header */}
+                      <div className="grid grid-cols-8 border-b bg-gray-50 sticky top-0 z-10">
+                        <div className="p-3 font-semibold text-gray-700 border-r">Ca</div>
+                        {WEEKDAYS.map((day, idx) => {
+                          const date = weekDates[idx];
+                          const isToday = date && date.toDateString() === new Date().toDateString();
+                          return (
+                            <div
+                              key={day}
+                              className={`p-3 text-center border-r ${isToday ? 'bg-indigo-50' : ''}`}
+                            >
+                              <div className={`text-xs font-medium ${isToday ? 'text-indigo-600' : 'text-gray-600'}`}>
+                                {day}
                               </div>
-                            </div>
-                            {/* Tooltip on hover */}
-                            <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block z-20 pointer-events-none">
-                              <div className="bg-gray-900 text-white text-xs rounded-lg py-2 px-3 shadow-lg max-w-xs">
-                                <div className="space-y-1 max-h-48 overflow-y-auto">
-                                  {staffDetails.map((staff, idx) => (
-                                    <div key={idx} className="whitespace-nowrap">
-                                      {staff.name}
-                                    </div>
-                                  ))}
-                                </div>
-                                <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-full">
-                                  <div className="border-4 border-transparent border-t-gray-900"></div>
-                                </div>
-                              </div>
-                            </div>
-                          </button>
-                        ) : (
-                          <div className="text-gray-300 text-sm">—</div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Mobile: List View */}
-          <div className="md:hidden space-y-3">
-            {availableShifts.map((shift) => (
-              <div key={shift.id} className="bg-white rounded-xl shadow-sm border overflow-hidden">
-                <div className="p-3 bg-gradient-to-r from-blue-50 to-cyan-50 border-b">
-                  <h3 className="font-semibold text-gray-900">{shift.name}</h3>
-                </div>
-                
-                <div className="divide-y">
-                  {WEEKDAYS.map((day, dayIdx) => {
-                    const date = weekDates[dayIdx];
-                    const dateStr = formatDateForAPI(date);
-                    const count = getStaffCountForDayAndShift(dateStr, String(shift.id));
-                    const staffNames = getStaffNamesForDayAndShift(dateStr, String(shift.id));
-                    const isToday = date && date.toDateString() === new Date().toDateString();
-                    
-                    return (
-                      <div
-                        key={dayIdx}
-                        className={`p-3 ${isToday ? 'bg-indigo-50' : ''}`}
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <div>
-                            <div className="font-medium text-gray-900">{WEEKDAY_FULL[dayIdx]}</div>
-                            <div className="text-sm text-gray-500">{formatDate(date)}</div>
-                          </div>
-                          {count > 0 && (
-                            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-100 rounded-full">
-                              <Users className="w-4 h-4 text-blue-600" />
-                              <span className="font-bold text-blue-600">{count}</span>
-                            </div>
-                          )}
-                        </div>
-                        
-                        {count > 0 ? (
-                          <button
-                            onClick={() => {
-                              const dateLabel = `${WEEKDAY_FULL[dayIdx]}, ${formatDate(date)}`;
-                              handleCellClick(dateStr, dateLabel, shift.name, String(shift.id));
-                            }}
-                            className="w-full text-left text-sm text-gray-700 hover:bg-blue-50 rounded-lg p-2 transition-colors"
-                          >
-                            <div className="font-medium mb-1">Nhân viên ({count}):</div>
-                            <div className="space-y-0.5">
-                              {staffNames.slice(0, 3).map((name, idx) => (
-                                <div key={idx} className="text-gray-600">• {name}</div>
-                              ))}
-                              {staffNames.length > 3 && (
-                                <div className="text-blue-600 text-xs font-medium">
-                                  Xem thêm {staffNames.length - 3} nhân viên...
+                              {date && (
+                                <div className={`text-sm font-bold ${isToday ? 'text-indigo-600' : 'text-gray-900'}`}>
+                                  {date.getDate()}
                                 </div>
                               )}
                             </div>
-                          </button>
-                        ) : (
-                          <div className="text-gray-400 text-sm text-center py-2">
-                            Không có nhân viên
-                          </div>
-                        )}
+                          );
+                        })}
                       </div>
-                    );
-                  })}
+
+                      {/* Table Body */}
+                      <div className="divide-y">
+                        {availableShifts.map((shift) => (
+                          <div key={shift.id} className="grid grid-cols-8 hover:bg-gray-50">
+                            {/* Shift Name */}
+                            <div className="p-3 border-r font-medium text-gray-900 flex items-center">
+                              {shift.name}
+                            </div>
+
+                            {/* Day Columns */}
+                            {WEEKDAYS.map((_, dayIdx) => {
+                              const dateStr = formatDateForAPI(weekDates[dayIdx]);
+                              const date = weekDates[dayIdx];
+                              const positionId = position.id === 'no-position' ? undefined : position.id;
+                              const count = getStaffCountForDayAndShift(dateStr, String(shift.id), positionId);
+                              const staffNames = getStaffNamesForDayAndShift(dateStr, String(shift.id), positionId);
+                              const staffDetails = getStaffDetailsForDayAndShift(dateStr, String(shift.id), positionId);
+                              const dateLabel = `${WEEKDAY_FULL[dayIdx]}, ${formatDate(date)}`;
+                              
+                              return (
+                                <div 
+                                  key={dayIdx} 
+                                  className="p-3 border-r text-center relative group"
+                                >
+                                  {count > 0 ? (
+                                    <button
+                                      onClick={() => handleCellClick(dateStr, dateLabel, shift.name, String(shift.id), positionId)}
+                                      className="w-full flex flex-col items-center gap-1 hover:bg-blue-50 rounded-lg p-2 transition-colors cursor-pointer"
+                                    >
+                                      <div className="flex items-center gap-1.5">
+                                        <Users className="w-4 h-4 text-blue-600" />
+                                        <span className="font-bold text-blue-600 text-lg">{count}</span>
+                                      </div>
+                                      <div className="text-xs text-gray-600 max-w-full">
+                                        <div className="truncate">
+                                          {staffNames.slice(0, 2).join(', ')}
+                                          {staffNames.length > 2 && ` +${staffNames.length - 2}`}
+                                        </div>
+                                      </div>
+                                      {/* Tooltip on hover */}
+                                      <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block z-20 pointer-events-none">
+                                        <div className="bg-gray-900 text-white text-xs rounded-lg py-2 px-3 shadow-lg max-w-xs">
+                                          <div className="space-y-1 max-h-48 overflow-y-auto">
+                                            {staffDetails.map((staff, idx) => (
+                                              <div key={idx} className="whitespace-nowrap">
+                                                {staff.name}
+                                              </div>
+                                            ))}
+                                          </div>
+                                          <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-full">
+                                            <div className="border-4 border-transparent border-t-gray-900"></div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </button>
+                                  ) : (
+                                    <div className="text-gray-300 text-sm">—</div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="p-8 text-center text-gray-400">
+                      Không có nhân viên trong vị trí này
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
+          </div>
+
+          {/* Mobile: List View by Position */}
+          <div className="md:hidden space-y-4">
+            {getAllPositionsWithNull().map((position) => {
+              const positionUsers = getUsersByPosition(position.id === 'no-position' ? undefined : position.id);
+              const hasUsers = positionUsers.length > 0;
+              
+              return (
+                <div key={position.id} className="bg-white rounded-xl shadow-sm border overflow-hidden">
+                  {/* Position Header */}
+                  <div className="p-3 bg-gradient-to-r from-blue-50 to-cyan-50 border-b">
+                    <h3 className="font-bold text-gray-900">{position.name}</h3>
+                    <p className="text-xs text-gray-600 mt-1">
+                      {positionUsers.length} nhân viên
+                    </p>
+                  </div>
+                  
+                  {hasUsers ? (
+                    <div className="divide-y">
+                      {availableShifts.map((shift) => (
+                        <div key={shift.id} className="border-b last:border-b-0">
+                          <div className="p-3 bg-gray-50">
+                            <h4 className="font-semibold text-gray-900 text-sm">{shift.name}</h4>
+                          </div>
+                          
+                          <div className="divide-y">
+                            {WEEKDAYS.map((day, dayIdx) => {
+                              const date = weekDates[dayIdx];
+                              const dateStr = formatDateForAPI(date);
+                              const positionId = position.id === 'no-position' ? undefined : position.id;
+                              const count = getStaffCountForDayAndShift(dateStr, String(shift.id), positionId);
+                              const staffNames = getStaffNamesForDayAndShift(dateStr, String(shift.id), positionId);
+                              const isToday = date && date.toDateString() === new Date().toDateString();
+                              
+                              return (
+                                <div
+                                  key={dayIdx}
+                                  className={`p-3 ${isToday ? 'bg-indigo-50' : ''}`}
+                                >
+                                  <div className="flex items-center justify-between mb-2">
+                                    <div>
+                                      <div className="font-medium text-gray-900 text-sm">{WEEKDAY_FULL[dayIdx]}</div>
+                                      <div className="text-xs text-gray-500">{formatDate(date)}</div>
+                                    </div>
+                                    {count > 0 && (
+                                      <div className="flex items-center gap-1.5 px-2 py-1 bg-blue-100 rounded-full">
+                                        <Users className="w-3 h-3 text-blue-600" />
+                                        <span className="font-bold text-blue-600 text-sm">{count}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                  
+                                  {count > 0 ? (
+                                    <button
+                                      onClick={() => {
+                                        const dateLabel = `${WEEKDAY_FULL[dayIdx]}, ${formatDate(date)}`;
+                                        handleCellClick(dateStr, dateLabel, shift.name, String(shift.id), positionId);
+                                      }}
+                                      className="w-full text-left text-xs text-gray-700 hover:bg-blue-50 rounded-lg p-2 transition-colors"
+                                    >
+                                      <div className="font-medium mb-1">Nhân viên ({count}):</div>
+                                      <div className="space-y-0.5">
+                                        {staffNames.slice(0, 3).map((name, idx) => (
+                                          <div key={idx} className="text-gray-600">• {name}</div>
+                                        ))}
+                                        {staffNames.length > 3 && (
+                                          <div className="text-blue-600 text-xs font-medium">
+                                            Xem thêm {staffNames.length - 3} nhân viên...
+                                          </div>
+                                        )}
+                                      </div>
+                                    </button>
+                                  ) : (
+                                    <div className="text-gray-400 text-xs text-center py-1">
+                                      Không có nhân viên
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-6 text-center text-gray-400 text-sm">
+                      Không có nhân viên trong vị trí này
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </>
       )}
