@@ -384,34 +384,157 @@ const ShiftApproval: React.FC<Props> = ({ user }) => {
           </p>
         </div>
       ) : (
-        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-          {/* Table Header - Days */}
-          <div className="grid grid-cols-9 border-b bg-gray-50 sticky top-0 z-10">
-            <div className="p-3 font-semibold text-gray-700 border-r min-w-[150px]">Nhân viên</div>
-            {WEEKDAYS.map((day, idx) => {
-              const date = weekDates[idx];
-              const isToday = date && date.toDateString() === new Date().toDateString();
-              return (
-                <div
-                  key={day}
-                  className={`p-3 text-center border-r min-w-[60px] ${isToday ? 'bg-indigo-50' : ''}`}
-                >
-                  <div className={`text-xs font-medium ${isToday ? 'text-indigo-600' : 'text-gray-600'}`}>
-                    {day}
-                  </div>
-                  {date && (
-                    <div className={`text-sm font-bold ${isToday ? 'text-indigo-600' : 'text-gray-900'}`}>
-                      {date.getDate()}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-            <div className="p-3 font-semibold text-gray-700 text-center">Thao tác</div>
+        <>
+          {/* Desktop: Table View */}
+          <div className="hidden md:block bg-white rounded-xl shadow-sm border overflow-x-auto">
+            <table className="w-full border-collapse min-w-[800px]">
+              {/* Table Header - Days */}
+              <thead className="bg-gray-50 sticky top-0 z-10">
+                <tr>
+                  <th className="p-3 font-semibold text-gray-700 border-r border-b text-left w-[150px]">Nhân viên</th>
+                  {WEEKDAYS.map((day, idx) => {
+                    const date = weekDates[idx];
+                    const isToday = date && date.toDateString() === new Date().toDateString();
+                    return (
+                      <th
+                        key={day}
+                        className={`p-2 text-center border-r border-b w-[70px] ${isToday ? 'bg-indigo-50' : ''}`}
+                      >
+                        <div className={`text-xs font-medium ${isToday ? 'text-indigo-600' : 'text-gray-600'}`}>
+                          {day}
+                        </div>
+                        {date && (
+                          <div className={`text-sm font-bold ${isToday ? 'text-indigo-600' : 'text-gray-900'}`}>
+                            {date.getDate()}
+                          </div>
+                        )}
+                      </th>
+                    );
+                  })}
+                  <th className="p-3 font-semibold text-gray-700 border-b text-center w-[100px]">Thao tác</th>
+                </tr>
+              </thead>
+
+              {/* Table Body - Users */}
+              <tbody>
+                {Object.entries(userGroups).map(([userKey, userRegs]) => {
+                  const userId = userRegs[0].userId;
+                  const userName = userRegs[0].userName;
+                  const userPendingRegs = userRegs.filter(r => r.status === ShiftRegistrationStatus.PENDING);
+                  const hasPending = userPendingRegs.length > 0;
+                  
+                  return (
+                    <tr key={userKey} className="hover:bg-gray-50">
+                      {/* User Name Column */}
+                      <td className="p-3 border-r border-b">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Users className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                          <span className="font-medium text-gray-900 truncate flex-1">{userName}</span>
+                          {hasPending && (
+                            <span className="px-1.5 py-0.5 bg-yellow-100 text-yellow-700 text-[10px] rounded flex-shrink-0">
+                              {userPendingRegs.length}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Day Columns */}
+                      {WEEKDAYS.map((_, dayIdx) => {
+                        const dateStr = formatDateForAPI(weekDates[dayIdx]);
+                        const dayRegs = getRegsForUserAndDay(userId, dateStr);
+                        
+                        return (
+                          <td key={dayIdx} className="p-1 border-r border-b w-[70px]">
+                            {dayRegs.length > 0 ? (
+                              <div className="space-y-0.5">
+                                {dayRegs.map(reg => (
+                                  <div
+                                    key={reg.id}
+                                    className={`px-1 py-0.5 rounded text-[10px] text-center ${
+                                      reg.status === ShiftRegistrationStatus.APPROVED 
+                                        ? 'bg-green-100 text-green-800 border border-green-300' 
+                                        : reg.status === ShiftRegistrationStatus.REJECTED
+                                        ? 'bg-red-100 text-red-800 border border-red-300'
+                                        : 'bg-yellow-100 text-yellow-800 border border-yellow-300'
+                                    }`}
+                                    style={{ maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                  >
+                                    <div className="font-medium truncate" style={{ maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {reg.shiftName}
+                                    </div>
+                                    {reg.status !== ShiftRegistrationStatus.APPROVED && (
+                                      <div className="mt-0.5">
+                                        {getStatusBadge(reg.status, false)}
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="flex items-center justify-center h-full min-h-[40px]">
+                                <span className="text-gray-300 text-sm">—</span>
+                              </div>
+                            )}
+                          </td>
+                        );
+                      })}
+
+                      {/* Action Column - at the end of each user row */}
+                      <td className="p-2 border-b w-[100px]">
+                        {filter === 'pending' && hasPending ? (
+                          <div className="flex flex-col gap-2">
+                            <button
+                              onClick={() => handleApproveAllForUser(userPendingRegs)}
+                              disabled={processing === `approve-all-${userId}`}
+                              className="w-full p-2 bg-green-600 text-white text-xs rounded hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                              title="Duyệt tất cả đăng ký"
+                            >
+                              {processing === `approve-all-${userId}` ? (
+                                <>
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                  <span>Đang duyệt...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <CheckCheck className="w-4 h-4" />
+                                  <span>Duyệt</span>
+                                </>
+                              )}
+                            </button>
+                            <button
+                              onClick={() => handleRejectAllForUser(userPendingRegs)}
+                              disabled={processing === `reject-all-${userId}`}
+                              className="w-full p-2 bg-red-600 text-white text-xs rounded hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                              title="Từ chối tất cả và cho đăng ký lại"
+                            >
+                              {processing === `reject-all-${userId}` ? (
+                                <>
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                  <span>Đang từ chối...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <X className="w-4 h-4" />
+                                  <span>Từ chối</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-center text-gray-300 text-xs py-2">
+                            —
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
 
-          {/* Table Body - Users */}
-          <div className="divide-y">
+          {/* Mobile: Card View */}
+          <div className="md:hidden space-y-4">
             {Object.entries(userGroups).map(([userKey, userRegs]) => {
               const userId = userRegs[0].userId;
               const userName = userRegs[0].userName;
@@ -419,74 +542,97 @@ const ShiftApproval: React.FC<Props> = ({ user }) => {
               const hasPending = userPendingRegs.length > 0;
               
               return (
-                <div key={userKey} className="grid grid-cols-9 hover:bg-gray-50 overflow-x-auto">
-                  {/* User Name Column */}
-                  <div className="p-3 border-r flex items-center gap-2 min-w-[150px]">
-                    <Users className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                    <span className="font-medium text-gray-900 break-words">{userName}</span>
+                <div key={userKey} className="bg-white rounded-xl shadow-sm border overflow-hidden">
+                  {/* User Header */}
+                  <div className="p-3 bg-gradient-to-r from-blue-50 to-cyan-50 border-b flex items-center gap-2">
+                    <Users className="w-4 h-4 text-gray-400" />
+                    <span className="font-medium text-gray-900 flex-1">{userName}</span>
                     {hasPending && (
-                      <span className="ml-auto px-1.5 py-0.5 bg-yellow-100 text-yellow-700 text-[10px] rounded flex-shrink-0">
-                        {userPendingRegs.length}
+                      <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 text-xs rounded">
+                        {userPendingRegs.length} chờ
                       </span>
                     )}
                   </div>
 
-                  {/* Day Columns */}
-                  {WEEKDAYS.map((_, dayIdx) => {
-                    const dateStr = formatDateForAPI(weekDates[dayIdx]);
-                    const dayRegs = getRegsForUserAndDay(userId, dateStr);
-                    
-                    return (
-                      <div key={dayIdx} className="p-2 border-r min-w-[60px] overflow-hidden">
-                        {dayRegs.length > 0 ? (
-                          <div className="space-y-1">
-                            {dayRegs.map(reg => (
-                              <div
-                                key={reg.id}
-                                className={`p-1.5 rounded text-xs flex items-center justify-center gap-1 min-w-0 ${
-                                  reg.status === ShiftRegistrationStatus.APPROVED 
-                                    ? 'bg-green-50 border border-green-200' 
-                                    : reg.status === ShiftRegistrationStatus.REJECTED
-                                    ? 'bg-red-50 border border-red-200'
-                                    : 'bg-yellow-50 border border-yellow-200'
-                                }`}
-                              >
-                                {/* Desktop: Full shift name */}
-                                <span className="font-medium text-gray-800 truncate flex-1 hidden md:inline text-center">
-                                  {reg.shiftName}
-                                </span>
-                                {/* Mobile: Abbreviation (S/C) */}
-                                <span className="font-medium text-gray-800 md:hidden">
-                                  {getShiftAbbreviation(reg.shiftName)}
-                                </span>
-                                {/* Desktop: Show badge for pending/rejected only */}
-                                <span className="hidden md:inline">
-                                  {getStatusBadge(reg.status, false)}
-                                </span>
+                  {/* Week Schedule */}
+                  <div className="p-3">
+                    <div className="grid grid-cols-7 gap-1 mb-3">
+                      {WEEKDAYS.map((day, dayIdx) => {
+                        const date = weekDates[dayIdx];
+                        const dateStr = formatDateForAPI(date);
+                        const dayRegs = getRegsForUserAndDay(userId, dateStr);
+                        const isToday = date && date.toDateString() === new Date().toDateString();
+                        
+                        return (
+                          <div key={dayIdx} className={`text-center ${isToday ? 'bg-indigo-50 rounded' : ''}`}>
+                            <div className={`text-[10px] font-medium ${isToday ? 'text-indigo-600' : 'text-gray-600'}`}>
+                              {day}
+                            </div>
+                            {date && (
+                              <div className={`text-xs font-bold ${isToday ? 'text-indigo-600' : 'text-gray-900'}`}>
+                                {date.getDate()}
                               </div>
-                            ))}
+                            )}
                           </div>
-                        ) : (
-                          <div className="flex items-center justify-center text-xs py-2">
-                            {/* Desktop: Show dash */}
-                            <span className="hidden md:inline text-gray-300">—</span>
-                            {/* Mobile: Show "O" (off) in red */}
-                            <span className="md:hidden text-red-500 font-bold">O</span>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                        );
+                      })}
+                    </div>
 
-                  {/* Action Column - at the end of each user row */}
-                  <div className="p-2 border-l">
-                    {filter === 'pending' && hasPending ? (
-                      <div className="flex flex-col gap-2">
+                    {/* Shifts by Day */}
+                    <div className="space-y-2">
+                      {WEEKDAYS.map((day, dayIdx) => {
+                        const date = weekDates[dayIdx];
+                        const dateStr = formatDateForAPI(date);
+                        const dayRegs = getRegsForUserAndDay(userId, dateStr);
+                        
+                        if (dayRegs.length === 0) return null;
+                        
+                        return (
+                          <div key={dayIdx} className="flex items-center gap-2">
+                            <div className="w-12 text-xs font-medium text-gray-600">
+                              {day} {date.getDate()}
+                            </div>
+                            <div className="flex-1 flex flex-wrap gap-1">
+                              {dayRegs.map(reg => (
+                                <div
+                                  key={reg.id}
+                                  className={`px-2 py-1 rounded text-xs font-medium ${
+                                    reg.status === ShiftRegistrationStatus.APPROVED 
+                                      ? 'bg-green-100 text-green-800 border border-green-300' 
+                                      : reg.status === ShiftRegistrationStatus.REJECTED
+                                      ? 'bg-red-100 text-red-800 border border-red-300'
+                                      : 'bg-yellow-100 text-yellow-800 border border-yellow-300'
+                                  }`}
+                                >
+                                  {getShiftAbbreviation(reg.shiftName)}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Empty days indicator */}
+                    {weekDates.filter((date, idx) => {
+                      const dateStr = formatDateForAPI(date);
+                      return getRegsForUserAndDay(userId, dateStr).length === 0;
+                    }).length > 0 && (
+                      <div className="mt-2 text-xs text-gray-500 text-center">
+                        Ngày không đăng ký: {weekDates.filter((date, idx) => {
+                          const dateStr = formatDateForAPI(date);
+                          return getRegsForUserAndDay(userId, dateStr).length === 0;
+                        }).map((date, idx) => `${WEEKDAYS[idx]} ${date.getDate()}`).join(', ')}
+                      </div>
+                    )}
+
+                    {/* Actions */}
+                    {filter === 'pending' && hasPending && (
+                      <div className="mt-3 pt-3 border-t flex gap-2">
                         <button
                           onClick={() => handleApproveAllForUser(userPendingRegs)}
                           disabled={processing === `approve-all-${userId}`}
-                          className="w-full p-2 bg-green-600 text-white text-xs rounded hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-1.5"
-                          title="Duyệt tất cả đăng ký"
+                          className="flex-1 p-2 bg-green-600 text-white text-xs rounded hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-1.5"
                         >
                           {processing === `approve-all-${userId}` ? (
                             <>
@@ -503,8 +649,7 @@ const ShiftApproval: React.FC<Props> = ({ user }) => {
                         <button
                           onClick={() => handleRejectAllForUser(userPendingRegs)}
                           disabled={processing === `reject-all-${userId}`}
-                          className="w-full p-2 bg-red-600 text-white text-xs rounded hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-1.5"
-                          title="Từ chối tất cả và cho đăng ký lại"
+                          className="flex-1 p-2 bg-red-600 text-white text-xs rounded hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-1.5"
                         >
                           {processing === `reject-all-${userId}` ? (
                             <>
@@ -519,17 +664,13 @@ const ShiftApproval: React.FC<Props> = ({ user }) => {
                           )}
                         </button>
                       </div>
-                    ) : (
-                      <div className="flex items-center justify-center text-gray-300 text-xs py-2">
-                        —
-                      </div>
                     )}
                   </div>
                 </div>
               );
             })}
           </div>
-        </div>
+        </>
       )}
     </div>
   );
