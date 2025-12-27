@@ -76,10 +76,11 @@ const ShiftRegistration: React.FC<Props> = ({ user }) => {
       ? selectedShifts.map(day => [...day]) // Copy current state
       : [[], [], [], [], [], [], []];
     
-    // KHÔNG load pending vào selectedShifts để tránh duplicate
-    // Chỉ load approved (để hiển thị đã chọn, nhưng sẽ bị disable)
-    // Pending sẽ được hiển thị từ dayRegs, không cần highlight button
-    const approvedRegs = regs.filter(reg => 
+    // QUAN TRỌNG: Load TẤT CẢ pending và approved vào selectedShifts
+    // Để khi submit sẽ gửi lại TẤT CẢ các ca đã đăng ký
+    // Backend sẽ xóa tất cả pending và tạo lại từ selectedShifts
+    const pendingAndApprovedRegs = regs.filter(reg => 
+      reg.status === ShiftRegistrationStatus.PENDING || 
       reg.status === ShiftRegistrationStatus.APPROVED
     );
     
@@ -95,7 +96,8 @@ const ShiftRegistration: React.FC<Props> = ({ user }) => {
       }
     });
     
-    approvedRegs.forEach(reg => {
+    // Load TẤT CẢ pending và approved vào selectedShifts
+    pendingAndApprovedRegs.forEach(reg => {
       // Tìm dayIndex bằng cách so sánh date string
       const dayIndex = weekDates.findIndex(d => formatDateForAPI(d) === reg.workDate);
       if (dayIndex >= 0 && dayIndex < 7) {
@@ -561,18 +563,14 @@ const ShiftRegistration: React.FC<Props> = ({ user }) => {
                         buttonClass = 'bg-green-600 text-white';
                         isDisabled = true;
                       } else if (reg.status === ShiftRegistrationStatus.PENDING) {
-                        // Đang chờ: vàng, có thể toggle (xóa)
-                        buttonClass = 'bg-yellow-500 text-white hover:bg-yellow-600';
-                        onClickHandler = async () => {
-                          try {
-                            await deleteShiftRegistration(reg.id);
-                            // Xóa khỏi nextWeekRegs
-                            setNextWeekRegs(prev => prev.filter(r => r.id !== reg.id));
-                            // Thêm vào selectedShifts để khi submit sẽ gửi lại tất cả
-                            handleShiftAdd(dayIdx, reg.workShiftId);
-                          } catch (err) {
-                            setError('Không thể xóa đăng ký');
-                          }
+                        // Đang chờ: vàng, có thể toggle (chỉ toggle trong selectedShifts, không gọi API)
+                        buttonClass = isSelected 
+                          ? 'bg-yellow-500 text-white hover:bg-yellow-600'
+                          : 'bg-yellow-400 text-white hover:bg-yellow-500';
+                        onClickHandler = () => {
+                          // Chỉ toggle trong selectedShifts, không gọi API xóa
+                          // Khi submit, backend sẽ xóa tất cả pending và tạo lại từ selectedShifts
+                          handleShiftToggle(dayIdx, shift.id);
                         };
                       } else if (reg.status === ShiftRegistrationStatus.REJECTED) {
                         // Bị từ chối: màu trắng/xám, có thể chọn lại từ đầu
@@ -665,18 +663,14 @@ const ShiftRegistration: React.FC<Props> = ({ user }) => {
                           buttonClass = 'bg-green-600 text-white';
                           isDisabled = true;
                         } else if (reg.status === ShiftRegistrationStatus.PENDING) {
-                          // Đang chờ: vàng, có thể toggle (xóa)
-                          buttonClass = 'bg-yellow-500 text-white hover:bg-yellow-600';
-                          onClickHandler = async () => {
-                            try {
-                              await deleteShiftRegistration(reg.id);
-                              // Xóa khỏi nextWeekRegs
-                              setNextWeekRegs(prev => prev.filter(r => r.id !== reg.id));
-                              // Thêm vào selectedShifts để khi submit sẽ gửi lại tất cả
-                              handleShiftAdd(dayIdx, reg.workShiftId);
-                            } catch (err) {
-                              setError('Không thể xóa đăng ký');
-                            }
+                          // Đang chờ: vàng, có thể toggle (chỉ toggle trong selectedShifts, không gọi API)
+                          buttonClass = isSelected 
+                            ? 'bg-yellow-500 text-white hover:bg-yellow-600'
+                            : 'bg-yellow-400 text-white hover:bg-yellow-500';
+                          onClickHandler = () => {
+                            // Chỉ toggle trong selectedShifts, không gọi API xóa
+                            // Khi submit, backend sẽ xóa tất cả pending và tạo lại từ selectedShifts
+                            handleShiftToggle(dayIdx, shift.id);
                           };
                         } else if (reg.status === ShiftRegistrationStatus.REJECTED) {
                           // Bị từ chối: màu trắng/xám, có thể chọn lại từ đầu

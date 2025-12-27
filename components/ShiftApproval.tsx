@@ -554,9 +554,9 @@ const ShiftApproval: React.FC<Props> = ({ user }) => {
                     )}
                   </div>
 
-                  {/* Week Schedule */}
+                  {/* Shifts by Day - Vertical List */}
                   <div className="p-3">
-                    <div className="grid grid-cols-7 gap-1 mb-3">
+                    <div className="space-y-2">
                       {WEEKDAYS.map((day, dayIdx) => {
                         const date = weekDates[dayIdx];
                         const dateStr = formatDateForAPI(date);
@@ -564,67 +564,49 @@ const ShiftApproval: React.FC<Props> = ({ user }) => {
                         const isToday = date && date.toDateString() === new Date().toDateString();
                         
                         return (
-                          <div key={dayIdx} className={`text-center ${isToday ? 'bg-indigo-50 rounded' : ''}`}>
-                            <div className={`text-[10px] font-medium ${isToday ? 'text-indigo-600' : 'text-gray-600'}`}>
-                              {day}
+                          <div key={dayIdx} className={`border rounded-lg p-2 ${isToday ? 'bg-indigo-50 border-indigo-200' : 'border-gray-200'}`}>
+                            {/* Day Header */}
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <div className={`text-xs font-bold ${isToday ? 'text-indigo-600' : 'text-gray-900'}`}>
+                                  {day}
+                                </div>
+                                <div className={`text-sm font-bold ${isToday ? 'text-indigo-600' : 'text-gray-900'}`}>
+                                  {date.getDate()}
+                                </div>
+                              </div>
+                              {dayRegs.length === 0 && (
+                                <span className="text-red-500 font-bold text-xs">O</span>
+                              )}
                             </div>
-                            {date && (
-                              <div className={`text-xs font-bold ${isToday ? 'text-indigo-600' : 'text-gray-900'}`}>
-                                {date.getDate()}
+                            
+                            {/* Shifts */}
+                            {dayRegs.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {dayRegs.map(reg => (
+                                  <div
+                                    key={reg.id}
+                                    className={`px-2 py-1 rounded text-xs font-medium ${
+                                      reg.status === ShiftRegistrationStatus.APPROVED 
+                                        ? 'bg-green-100 text-green-800 border border-green-300' 
+                                        : reg.status === ShiftRegistrationStatus.REJECTED
+                                        ? 'bg-red-100 text-red-800 border border-red-300'
+                                        : 'bg-yellow-100 text-yellow-800 border border-yellow-300'
+                                    }`}
+                                  >
+                                    {getShiftAbbreviation(reg.shiftName)}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-gray-400 text-xs text-center py-1">
+                                Không có ca
                               </div>
                             )}
                           </div>
                         );
                       })}
                     </div>
-
-                    {/* Shifts by Day */}
-                    <div className="space-y-2">
-                      {WEEKDAYS.map((day, dayIdx) => {
-                        const date = weekDates[dayIdx];
-                        const dateStr = formatDateForAPI(date);
-                        const dayRegs = getRegsForUserAndDay(userId, dateStr);
-                        
-                        if (dayRegs.length === 0) return null;
-                        
-                        return (
-                          <div key={dayIdx} className="flex items-center gap-2">
-                            <div className="w-12 text-xs font-medium text-gray-600">
-                              {day} {date.getDate()}
-                            </div>
-                            <div className="flex-1 flex flex-wrap gap-1">
-                              {dayRegs.map(reg => (
-                                <div
-                                  key={reg.id}
-                                  className={`px-2 py-1 rounded text-xs font-medium ${
-                                    reg.status === ShiftRegistrationStatus.APPROVED 
-                                      ? 'bg-green-100 text-green-800 border border-green-300' 
-                                      : reg.status === ShiftRegistrationStatus.REJECTED
-                                      ? 'bg-red-100 text-red-800 border border-red-300'
-                                      : 'bg-yellow-100 text-yellow-800 border border-yellow-300'
-                                  }`}
-                                >
-                                  {getShiftAbbreviation(reg.shiftName)}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* Empty days indicator */}
-                    {weekDates.filter((date, idx) => {
-                      const dateStr = formatDateForAPI(date);
-                      return getRegsForUserAndDay(userId, dateStr).length === 0;
-                    }).length > 0 && (
-                      <div className="mt-2 text-xs text-gray-500 text-center">
-                        Ngày không đăng ký: {weekDates.filter((date, idx) => {
-                          const dateStr = formatDateForAPI(date);
-                          return getRegsForUserAndDay(userId, dateStr).length === 0;
-                        }).map((date, idx) => `${WEEKDAYS[idx]} ${date.getDate()}`).join(', ')}
-                      </div>
-                    )}
 
                     {/* Actions */}
                     {filter === 'pending' && hasPending && (
