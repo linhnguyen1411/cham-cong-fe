@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Users, ChevronLeft, ChevronRight, Loader2, X, Phone } from 'lucide-react';
-import { User, ShiftRegistration, ShiftRegistrationStatus, Position } from '../types';
+import { User, ShiftRegistration, ShiftRegistrationStatus, Position, UserRole, UserStatus } from '../types';
 import { getShiftRegistrations, getWorkShifts, getUsers, getPositions } from '../services/api';
 
 interface Props {
@@ -135,20 +135,39 @@ const StaffSchedule: React.FC<Props> = ({ user }) => {
     });
   };
   
+  // Get active staff only (exclude admin and deactive users)
+  const getActiveStaff = (): User[] => {
+    return allUsers.filter(u => 
+      u.role === UserRole.STAFF && 
+      u.status !== UserStatus.DEACTIVE
+    );
+  };
+
   // Get users by position
   const getUsersByPosition = (positionId?: string): User[] => {
+    const activeStaff = getActiveStaff();
     if (!positionId || positionId === 'no-position') {
-      return allUsers.filter(u => !u.positionId);
+      return activeStaff.filter(u => !u.positionId);
     }
-    return allUsers.filter(u => u.positionId === positionId);
+    return activeStaff.filter(u => u.positionId === positionId);
   };
   
-  // Get all positions including "No Position" (null)
+  // Get position sort order (phục vụ -> bếp -> others -> chưa phân vị trí)
+  const getPositionSortOrder = (positionName: string): number => {
+    const name = positionName.toLowerCase();
+    if (name.includes('phục vụ') || name.includes('phuc vu')) return 1;
+    if (name.includes('bếp') || name.includes('bep')) return 2;
+    if (name === 'chưa phân vị trí' || name === 'chua phan vi tri') return 999;
+    return 10; // Other positions
+  };
+  
+  // Get all positions including "No Position" (null), sorted
   const getAllPositionsWithNull = (): Array<Position & { id: string; name: string }> => {
+    const activeStaff = getActiveStaff();
     const result: Array<Position & { id: string; name: string }> = [...positions];
     
-    // Add "No Position" if there are users without position
-    const usersWithoutPosition = allUsers.filter(u => !u.positionId);
+    // Add "No Position" if there are active staff without position
+    const usersWithoutPosition = activeStaff.filter(u => !u.positionId);
     if (usersWithoutPosition.length > 0) {
       result.push({
         id: 'no-position',
@@ -163,7 +182,13 @@ const StaffSchedule: React.FC<Props> = ({ user }) => {
       } as Position & { id: string; name: string });
     }
     
-    return result;
+    // Sort positions: phục vụ -> bếp -> others -> chưa phân vị trí
+    return result.sort((a, b) => {
+      const orderA = getPositionSortOrder(a.name);
+      const orderB = getPositionSortOrder(b.name);
+      if (orderA !== orderB) return orderA - orderB;
+      return a.name.localeCompare(b.name, 'vi');
+    });
   };
 
   const handleCellClick = (dateStr: string, dateLabel: string, shiftName: string, shiftId: string, positionId?: string) => {
