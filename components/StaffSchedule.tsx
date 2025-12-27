@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Users, ChevronLeft, ChevronRight, Loader2, X, Phone } from 'lucide-react';
+import { Calendar, Users, ChevronLeft, ChevronRight, Loader2, X, Phone, GripVertical } from 'lucide-react';
 import { User, ShiftRegistration, ShiftRegistrationStatus, Position, UserRole, UserStatus } from '../types';
 import { getShiftRegistrations, getWorkShifts, getUsers, getPositions } from '../services/api';
 
@@ -24,10 +24,30 @@ const StaffSchedule: React.FC<Props> = ({ user }) => {
     shiftName: string;
     staff: Array<{ name: string; phone?: string }>;
   } | null>(null);
+  const [positionOrder, setPositionOrder] = useState<string[]>([]);
+  const [draggedPositionId, setDraggedPositionId] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
   }, [selectedWeek]);
+
+  // Load position order from localStorage
+  useEffect(() => {
+    const savedOrder = localStorage.getItem('positionOrder');
+    if (savedOrder) {
+      try {
+        setPositionOrder(JSON.parse(savedOrder));
+      } catch (e) {
+        console.error('Failed to parse position order:', e);
+      }
+    }
+  }, []);
+
+  // Save position order to localStorage
+  const savePositionOrder = (order: string[]) => {
+    setPositionOrder(order);
+    localStorage.setItem('positionOrder', JSON.stringify(order));
+  };
 
   const loadData = async () => {
     try {
@@ -182,13 +202,92 @@ const StaffSchedule: React.FC<Props> = ({ user }) => {
       } as Position & { id: string; name: string });
     }
     
-    // Sort positions: phục vụ -> bếp -> others -> chưa phân vị trí
+    // Sort positions: use saved order if available, otherwise use default sort
+    if (positionOrder.length > 0) {
+      const ordered: Array<Position & { id: string; name: string }> = [];
+      const unordered: Array<Position & { id: string; name: string }> = [];
+      
+      // Add positions in saved order
+      positionOrder.forEach(id => {
+        const pos = result.find(p => p.id === id);
+        if (pos) ordered.push(pos);
+      });
+      
+      // Add positions not in saved order
+      result.forEach(pos => {
+        if (!positionOrder.includes(pos.id)) {
+          unordered.push(pos);
+        }
+      });
+      
+      // Sort unordered by default order
+      unordered.sort((a, b) => {
+        const orderA = getPositionSortOrder(a.name);
+        const orderB = getPositionSortOrder(b.name);
+        if (orderA !== orderB) return orderA - orderB;
+        return a.name.localeCompare(b.name, 'vi');
+      });
+      
+      return [...ordered, ...unordered];
+    }
+    
+    // Default sort: phục vụ -> bếp -> others -> chưa phân vị trí
     return result.sort((a, b) => {
       const orderA = getPositionSortOrder(a.name);
       const orderB = getPositionSortOrder(b.name);
       if (orderA !== orderB) return orderA - orderB;
       return a.name.localeCompare(b.name, 'vi');
     });
+  };
+
+  // Handle drag start
+  const handleDragStart = (e: React.DragEvent, positionId: string) => {
+    setDraggedPositionId(positionId);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/html', positionId);
+  };
+
+  // Handle drag over
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  // Handle drop
+  const handleDrop = (e: React.DragEvent, targetPositionId: string) => {
+    e.preventDefault();
+    if (!draggedPositionId || draggedPositionId === targetPositionId) {
+      setDraggedPositionId(null);
+      return;
+    }
+
+    const allPositions = getAllPositionsWithNull();
+    const currentOrder = positionOrder.length > 0 
+      ? positionOrder.filter(id => allPositions.some(p => p.id === id))
+      : allPositions.map(p => p.id);
+
+    const draggedIndex = currentOrder.indexOf(draggedPositionId);
+    const targetIndex = currentOrder.indexOf(targetPositionId);
+
+    if (draggedIndex === -1 || targetIndex === -1) {
+      setDraggedPositionId(null);
+      return;
+    }
+
+    // Reorder
+    const newOrder = [...currentOrder];
+    newOrder.splice(draggedIndex, 1);
+    newOrder.splice(targetIndex, 0, draggedPositionId);
+
+    // Add any missing positions
+    allPositions.forEach(pos => {
+      if (!newOrder.includes(pos.id)) {
+        newOrder.push(pos.id);
+      }
+    });
+
+    savePositionOrder(newOrder);
+    setDraggedPositionId(null);
   };
 
   const handleCellClick = (dateStr: string, dateLabel: string, shiftName: string, shiftId: string, positionId?: string) => {
@@ -280,14 +379,28 @@ const StaffSchedule: React.FC<Props> = ({ user }) => {
               const positionUsers = getUsersByPosition(position.id === 'no-position' ? undefined : position.id);
               const hasUsers = positionUsers.length > 0;
               
+              const isDragging = draggedPositionId === position.id;
+              
               return (
-                <div key={position.id} className="bg-white rounded-xl shadow-sm border overflow-hidden">
+                <div 
+                  key={position.id} 
+                  className={`bg-white rounded-xl shadow-sm border overflow-hidden transition-opacity ${
+                    isDragging ? 'opacity-50' : ''
+                  }`}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, position.id)}
+                  onDragOver={handleDragOver}
+                  onDrop={(e) => handleDrop(e, position.id)}
+                >
                   {/* Position Header */}
-                  <div className="bg-gradient-to-r from-blue-50 to-cyan-50 border-b p-4">
-                    <h2 className="text-lg font-bold text-gray-900">{position.name}</h2>
-                    <p className="text-sm text-gray-600 mt-1">
-                      {positionUsers.length} nhân viên
-                    </p>
+                  <div className="bg-gradient-to-r from-blue-50 to-cyan-50 border-b p-4 flex items-center gap-3 cursor-move hover:bg-blue-100 transition-colors">
+                    <GripVertical className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                    <div className="flex-1">
+                      <h2 className="text-lg font-bold text-gray-900">{position.name}</h2>
+                      <p className="text-sm text-gray-600 mt-1">
+                        {positionUsers.length} nhân viên
+                      </p>
+                    </div>
                   </div>
                   
                   {hasUsers ? (
@@ -397,14 +510,28 @@ const StaffSchedule: React.FC<Props> = ({ user }) => {
               const positionUsers = getUsersByPosition(position.id === 'no-position' ? undefined : position.id);
               const hasUsers = positionUsers.length > 0;
               
+              const isDragging = draggedPositionId === position.id;
+              
               return (
-                <div key={position.id} className="bg-white rounded-xl shadow-sm border overflow-hidden">
+                <div 
+                  key={position.id} 
+                  className={`bg-white rounded-xl shadow-sm border overflow-hidden transition-opacity ${
+                    isDragging ? 'opacity-50' : ''
+                  }`}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, position.id)}
+                  onDragOver={handleDragOver}
+                  onDrop={(e) => handleDrop(e, position.id)}
+                >
                   {/* Position Header */}
-                  <div className="p-3 bg-gradient-to-r from-blue-50 to-cyan-50 border-b">
-                    <h3 className="font-bold text-gray-900">{position.name}</h3>
-                    <p className="text-xs text-gray-600 mt-1">
-                      {positionUsers.length} nhân viên
-                    </p>
+                  <div className="p-3 bg-gradient-to-r from-blue-50 to-cyan-50 border-b flex items-center gap-2 cursor-move active:bg-blue-100 transition-colors">
+                    <GripVertical className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                    <div className="flex-1">
+                      <h3 className="font-bold text-gray-900">{position.name}</h3>
+                      <p className="text-xs text-gray-600 mt-1">
+                        {positionUsers.length} nhân viên
+                      </p>
+                    </div>
                   </div>
                   
                   {hasUsers ? (
