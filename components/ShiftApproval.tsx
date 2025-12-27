@@ -219,15 +219,29 @@ const ShiftApproval: React.FC<Props> = ({ user }) => {
     return grouped;
   };
 
-  const getStatusBadge = (status: ShiftRegistrationStatus) => {
+  const getStatusBadge = (status: ShiftRegistrationStatus, isMobile: boolean = false) => {
+    if (isMobile) {
+      // Mobile: không hiển thị badge, chỉ dùng màu
+      return null;
+    }
     switch (status) {
       case ShiftRegistrationStatus.PENDING:
         return <span className="px-1.5 py-0.5 bg-yellow-100 text-yellow-700 text-[10px] rounded">Chờ</span>;
       case ShiftRegistrationStatus.APPROVED:
-        return <span className="px-1.5 py-0.5 bg-green-100 text-green-700 text-[10px] rounded">OK</span>;
+        // Desktop: không hiển thị "OK" vì màu xanh đã biết là ok
+        return null;
       case ShiftRegistrationStatus.REJECTED:
         return <span className="px-1.5 py-0.5 bg-red-100 text-red-700 text-[10px] rounded">Từ chối</span>;
     }
+  };
+
+  // Get shift abbreviation for mobile (S = sáng, C = chiều)
+  const getShiftAbbreviation = (shiftName?: string): string => {
+    if (!shiftName) return '';
+    const name = shiftName.toLowerCase();
+    if (name.includes('sáng') || name.includes('sang')) return 'S';
+    if (name.includes('chiều') || name.includes('chieu')) return 'C';
+    return shiftName.charAt(0).toUpperCase();
   };
 
   // Get all unique weeks
@@ -380,7 +394,7 @@ const ShiftApproval: React.FC<Props> = ({ user }) => {
               return (
                 <div
                   key={day}
-                  className={`p-3 text-center border-r ${isToday ? 'bg-indigo-50' : ''}`}
+                  className={`p-3 text-center border-r min-w-[60px] ${isToday ? 'bg-indigo-50' : ''}`}
                 >
                   <div className={`text-xs font-medium ${isToday ? 'text-indigo-600' : 'text-gray-600'}`}>
                     {day}
@@ -405,7 +419,7 @@ const ShiftApproval: React.FC<Props> = ({ user }) => {
               const hasPending = userPendingRegs.length > 0;
               
               return (
-                <div key={userKey} className="grid grid-cols-9 hover:bg-gray-50">
+                <div key={userKey} className="grid grid-cols-9 hover:bg-gray-50 overflow-x-auto">
                   {/* User Name Column */}
                   <div className="p-3 border-r flex items-center gap-2 min-w-[150px]">
                     <Users className="w-4 h-4 text-gray-400 flex-shrink-0" />
@@ -423,13 +437,13 @@ const ShiftApproval: React.FC<Props> = ({ user }) => {
                     const dayRegs = getRegsForUserAndDay(userId, dateStr);
                     
                     return (
-                      <div key={dayIdx} className="p-2 border-r">
+                      <div key={dayIdx} className="p-2 border-r min-w-[60px] overflow-hidden">
                         {dayRegs.length > 0 ? (
                           <div className="space-y-1">
                             {dayRegs.map(reg => (
                               <div
                                 key={reg.id}
-                                className={`p-1.5 rounded text-xs flex items-center justify-between ${
+                                className={`p-1.5 rounded text-xs flex items-center justify-center gap-1 min-w-0 ${
                                   reg.status === ShiftRegistrationStatus.APPROVED 
                                     ? 'bg-green-50 border border-green-200' 
                                     : reg.status === ShiftRegistrationStatus.REJECTED
@@ -437,16 +451,27 @@ const ShiftApproval: React.FC<Props> = ({ user }) => {
                                     : 'bg-yellow-50 border border-yellow-200'
                                 }`}
                               >
-                                <span className="font-medium text-gray-800 truncate flex-1">
+                                {/* Desktop: Full shift name */}
+                                <span className="font-medium text-gray-800 truncate flex-1 hidden md:inline text-center">
                                   {reg.shiftName}
                                 </span>
-                                {getStatusBadge(reg.status)}
+                                {/* Mobile: Abbreviation (S/C) */}
+                                <span className="font-medium text-gray-800 md:hidden">
+                                  {getShiftAbbreviation(reg.shiftName)}
+                                </span>
+                                {/* Desktop: Show badge for pending/rejected only */}
+                                <span className="hidden md:inline">
+                                  {getStatusBadge(reg.status, false)}
+                                </span>
                               </div>
                             ))}
                           </div>
                         ) : (
-                          <div className="flex items-center justify-center text-gray-300 text-xs py-2">
-                            —
+                          <div className="flex items-center justify-center text-xs py-2">
+                            {/* Desktop: Show dash */}
+                            <span className="hidden md:inline text-gray-300">—</span>
+                            {/* Mobile: Show "O" (off) in red */}
+                            <span className="md:hidden text-red-500 font-bold">O</span>
                           </div>
                         )}
                       </div>
