@@ -386,7 +386,7 @@ const ShiftApproval: React.FC<Props> = ({ user }) => {
       ) : (
         <>
           {/* Desktop: Table View */}
-          <div className="hidden md:block bg-white rounded-xl shadow-sm border overflow-x-auto">
+          <div className="hidden lg:block bg-white rounded-xl shadow-sm border overflow-x-auto">
             <table className="w-full border-collapse min-w-[800px]">
               {/* Table Header - Days */}
               <thead className="bg-gray-50 sticky top-0 z-10">
@@ -534,7 +534,7 @@ const ShiftApproval: React.FC<Props> = ({ user }) => {
           </div>
 
           {/* Mobile: Card View */}
-          <div className="md:hidden space-y-4">
+          <div className="lg:hidden space-y-4">
             {Object.entries(userGroups).map(([userKey, userRegs]) => {
               const userId = userRegs[0].userId;
               const userName = userRegs[0].userName;
