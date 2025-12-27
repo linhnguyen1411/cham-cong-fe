@@ -4,6 +4,7 @@ import * as api from '../services/api';
 import { Calendar, Filter, Download, Eye } from 'lucide-react';
 import { MotivationQuote } from './MotivationQuote';
 import { CheckoutReportDetail } from './CheckoutReportDetail';
+import * as XLSX from 'xlsx';
 
 interface HistoryProps {
   user: User;
@@ -73,6 +74,123 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
     });
   };
 
+  const formatDurationHours = (seconds: number): number => {
+    return Math.round((seconds / 3600) * 100) / 100; // Round to 2 decimal places
+  };
+
+  const exportToExcel = () => {
+    if (filteredSessions.length === 0) {
+      alert('Không có dữ liệu để xuất!');
+      return;
+    }
+
+    // Sheet 1: Chi tiết từng ca làm việc
+    const detailData = filteredSessions.map(session => {
+      const startDate = new Date(session.startTime);
+      const endDate = session.endTime ? new Date(session.endTime) : null;
+      
+      return {
+        'Ngày': startDate.toLocaleDateString('vi-VN'),
+        'Nhân viên': session.userName || 'N/A',
+        'Ca làm việc': session.shiftName || 'N/A',
+        'Giờ vào': startDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+        'Giờ ra': endDate ? endDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : 'Chưa checkout',
+        'Tổng giờ': session.duration > 0 ? formatDurationHours(session.duration) : 0,
+        'Tổng phút': session.duration > 0 ? Math.floor(session.duration / 60) : 0,
+        'Trạng thái': session.endTime ? 'Hoàn thành' : 'Đang làm việc',
+        'Đúng giờ': session.isOnTime !== false ? 'Có' : 'Không',
+        'Muộn (phút)': session.minutesLate || 0,
+        'Quên checkout': session.forgotCheckout ? 'Có' : 'Không',
+        'Ghi chú': session.notes || '',
+        'Tóm tắt công việc': session.workSummary || '',
+        'Thách thức': session.challenges || '',
+        'Đề xuất': session.suggestions || ''
+      };
+    });
+
+    // Sheet 2: Tổng hợp bảng lương theo nhân viên
+    const summaryMap = new Map<string, {
+      userName: string;
+      totalSessions: number;
+      totalHours: number;
+      totalMinutes: number;
+      completedSessions: number;
+      lateCount: number;
+      forgotCheckoutCount: number;
+    }>();
+
+    filteredSessions.forEach(session => {
+      const userName = session.userName || 'N/A';
+      
+      if (!summaryMap.has(userName)) {
+        summaryMap.set(userName, {
+          userName,
+          totalSessions: 0,
+          totalHours: 0,
+          totalMinutes: 0,
+          completedSessions: 0,
+          lateCount: 0,
+          forgotCheckoutCount: 0
+        });
+      }
+
+      const summary = summaryMap.get(userName)!;
+      summary.totalSessions++;
+      
+      if (session.duration > 0) {
+        summary.totalHours += formatDurationHours(session.duration);
+        summary.totalMinutes += Math.floor(session.duration / 60);
+      }
+      
+      if (session.endTime) {
+        summary.completedSessions++;
+      }
+      
+      if (session.isOnTime === false) {
+        summary.lateCount++;
+      }
+      
+      if (session.forgotCheckout) {
+        summary.forgotCheckoutCount++;
+      }
+    });
+
+    const summaryData = Array.from(summaryMap.values()).map(summary => ({
+      'Nhân viên': summary.userName,
+      'Tổng số ca': summary.totalSessions,
+      'Số ca hoàn thành': summary.completedSessions,
+      'Tổng giờ làm việc': Math.round(summary.totalHours * 100) / 100,
+      'Tổng phút làm việc': summary.totalMinutes,
+      'Số lần muộn': summary.lateCount,
+      'Số lần quên checkout': summary.forgotCheckoutCount,
+      'Giờ trung bình/ca': summary.totalSessions > 0 
+        ? Math.round((summary.totalHours / summary.totalSessions) * 100) / 100 
+        : 0
+    }));
+
+    // Create workbook
+    const wb = XLSX.utils.book_new();
+
+    // Add detail sheet
+    const wsDetail = XLSX.utils.json_to_sheet(detailData);
+    XLSX.utils.book_append_sheet(wb, wsDetail, 'Chi tiết ca làm việc');
+
+    // Add summary sheet
+    const wsSummary = XLSX.utils.json_to_sheet(summaryData);
+    XLSX.utils.book_append_sheet(wb, wsSummary, 'Tổng hợp bảng lương');
+
+    // Generate filename
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('vi-VN').replace(/\//g, '-');
+    const filterText = filter === FilterType.TODAY ? 'Hom-nay' :
+                       filter === FilterType.WEEK ? '7-ngay' :
+                       filter === FilterType.MONTH ? '30-ngay' : 'Tat-ca';
+    const filename = `Lich-su-lam-viec-${filterText}-${dateStr}.xlsx`;
+
+    // Export
+    XLSX.writeFile(wb, filename);
+  };
+
   return (
     <div className="space-y-6">
       <MotivationQuote />
@@ -97,8 +215,13 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
                     <option value={FilterType.ALL}>Tất cả</option>
                 </select>
             </div>
-            {/* Mock Export */}
-            <button className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg border border-slate-200">
+            {/* Export Button */}
+            <button 
+              onClick={exportToExcel}
+              disabled={loading || filteredSessions.length === 0}
+              className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg border border-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title="Tải xuống bảng lương"
+            >
                 <Download size={18} />
             </button>
         </div>
