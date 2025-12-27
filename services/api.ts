@@ -1,5 +1,5 @@
 
-import { User, WorkSession, AuthResponse, UserRole, WorkShift, Branch, Department } from '../types';
+import { User, WorkSession, AuthResponse, UserRole, UserStatus, WorkShift, Branch, Department, Position, ShiftRegistration, PositionLevel, ShiftRegistrationStatus, WorkScheduleType } from '../types';
 
 const STORAGE_KEYS = {
   CURRENT_USER: 'timekeep_user'
@@ -14,7 +14,11 @@ const getBaseUrl = () => {
   if (typeof window !== 'undefined' && (window as any).API_BASE_URL) {
     return (window as any).API_BASE_URL;
   }
-  return (process.env.REACT_APP_API_URL || 'http://127.0.0.1:3000').replace(/\/$/, '');
+  // Default to /api for production (Nginx proxy), or localhost for development
+  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    return '/api'; // Production: use Nginx proxy
+  }
+  return (process.env.REACT_APP_API_URL || 'http://127.0.0.1:4000').replace(/\/$/, '');
 };
 
 export const BASE_URL = getBaseUrl();
@@ -141,16 +145,21 @@ const mapUserFromApi = (data: any): User => ({
   username: data.username,
   fullName: data.full_name || data.fullName || data.username,
   role: (data.role && String(data.role).toLowerCase() === 'admin') ? UserRole.ADMIN : UserRole.STAFF,
+  status: data.status ? (data.status === 'deactive' ? UserStatus.DEACTIVE : UserStatus.ACTIVE) : UserStatus.ACTIVE,
   avatar: data.avatar_url || data.avatar || `https://ui-avatars.com/api/?name=${data.username}&background=random`,
   branchId: data.branch_id ? String(data.branch_id) : undefined,
   branchName: data.branch_name || undefined,
   branchAddress: data.branch_address || undefined,
   departmentId: data.department_id ? String(data.department_id) : undefined,
   departmentName: data.department_name || undefined,
+  positionId: data.position_id ? String(data.position_id) : undefined,
+  positionName: data.position_name || undefined,
+  positionLevel: data.position_level || undefined,
   workAddress: data.work_address || undefined,
   address: data.address || undefined,
   phone: data.phone || undefined,
-  birthday: data.birthday || undefined
+  birthday: data.birthday || undefined,
+  workScheduleType: data.work_schedule_type as WorkScheduleType || WorkScheduleType.BOTH_SHIFTS
 });
 
 const mapBranchFromApi = (data: any): Branch => ({
@@ -196,10 +205,13 @@ const mapSessionFromApi = (data: any): WorkSession => {
     duration: duration,
     dateStr: data.date_str || data.dateStr || new Date(startTime).toISOString().split('T')[0],
     workShiftId: data.work_shift_id ? String(data.work_shift_id) : undefined,
+    shiftName: data.shift_name || undefined,
+    shiftRegistrationId: data.shift_registration_id ? String(data.shift_registration_id) : undefined,
     isOnTime: data.is_on_time,
     minutesLate: data.minutes_late || 0,
     isEarlyCheckout: data.is_early_checkout || false,
     minutesBeforeEnd: data.minutes_before_end || 0,
+    forgotCheckout: data.forgot_checkout || false,
     // Map checkout report fields
     workSummary: data.work_summary || undefined,
     challenges: data.challenges || undefined,
@@ -604,20 +616,36 @@ export const getStaffById = async (id: string): Promise<User | null> => {
   }
 };
 
+export const deactivateStaff = async (id: string): Promise<User> => {
+  const data = await fetchAPI(`/users/${id}/deactivate`, {
+    method: 'PATCH'
+  });
+  return mapUserFromApi(data.user || data);
+};
+
 export const updateStaff = async (id: string, userData: Partial<User>): Promise<User> => {
-  const data = await fetchAPI(`/users/${id}`, {
-    method: 'PATCH',
-    body: JSON.stringify({
-      user: {
+  const payload: any = {
         full_name: userData.fullName,
         role: userData.role?.toLowerCase(),
         branch_id: userData.branchId ? Number(userData.branchId) : null,
         department_id: userData.departmentId ? Number(userData.departmentId) : null,
+    position_id: userData.positionId ? Number(userData.positionId) : null,
         work_address: userData.workAddress,
         address: userData.address,
         phone: userData.phone,
-        birthday: userData.birthday
-      }
+    birthday: userData.birthday,
+    work_schedule_type: userData.workScheduleType || 'both_shifts'
+  };
+  
+  // Add password if provided (admin can update password)
+  if ((userData as any).password) {
+    payload.password = (userData as any).password;
+  }
+  
+  const data = await fetchAPI(`/users/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      user: payload
     })
   });
   return mapUserFromApi(data);
@@ -673,4 +701,305 @@ export const updateDepartment = async (id: string, department: Partial<Departmen
 
 export const deleteDepartment = async (id: string): Promise<void> => {
   await fetchAPI(`/departments/${id}`, { method: 'DELETE' });
+};
+
+// --- POSITION MANAGEMENT (ADMIN) ---
+
+const mapPositionFromApi = (data: any): Position => ({
+  id: String(data.id),
+  name: data.name,
+  description: data.description || undefined,
+  branchId: data.branch_id ? String(data.branch_id) : undefined,
+  branchName: data.branch_name || undefined,
+  departmentId: data.department_id ? String(data.department_id) : undefined,
+  departmentName: data.department_name || undefined,
+  level: data.level || PositionLevel.STAFF_LEVEL,
+  usersCount: data.users_count || 0
+});
+
+export const getPositions = async (branchId?: string, departmentId?: string): Promise<Position[]> => {
+  try {
+    let url = '/positions';
+    const params = new URLSearchParams();
+    if (branchId) params.append('branch_id', branchId);
+    if (departmentId) params.append('department_id', departmentId);
+    if (params.toString()) url += `?${params.toString()}`;
+    
+    const data = await fetchAPI(url);
+    return Array.isArray(data) ? data.map(mapPositionFromApi) : [];
+  } catch (e) {
+    console.error("Get positions failed:", e);
+    return [];
+  }
+};
+
+export const getPosition = async (id: string): Promise<Position | null> => {
+  try {
+    const data = await fetchAPI(`/positions/${id}`);
+    return mapPositionFromApi(data);
+  } catch (e) {
+    console.error("Get position failed:", e);
+    return null;
+  }
+};
+
+export const createPosition = async (position: Omit<Position, 'id' | 'usersCount' | 'branchName' | 'departmentName'>): Promise<Position> => {
+  const data = await fetchAPI('/positions', {
+    method: 'POST',
+    body: JSON.stringify({
+      position: {
+        name: position.name,
+        description: position.description,
+        branch_id: position.branchId ? Number(position.branchId) : null,
+        department_id: position.departmentId ? Number(position.departmentId) : null,
+        level: position.level
+      }
+    })
+  });
+  return mapPositionFromApi(data);
+};
+
+export const updatePosition = async (id: string, position: Partial<Position>): Promise<Position> => {
+  const data = await fetchAPI(`/positions/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      position: {
+        name: position.name,
+        description: position.description,
+        branch_id: position.branchId ? Number(position.branchId) : null,
+        department_id: position.departmentId ? Number(position.departmentId) : null,
+        level: position.level
+      }
+    })
+  });
+  return mapPositionFromApi(data);
+};
+
+export const deletePosition = async (id: string): Promise<void> => {
+  await fetchAPI(`/positions/${id}`, { method: 'DELETE' });
+};
+
+// --- SHIFT REGISTRATION (Employee & Admin) ---
+
+const mapShiftRegistrationFromApi = (data: any): ShiftRegistration => ({
+  id: String(data.id),
+  userId: String(data.user_id),
+  userName: data.user_name || undefined,
+  workShiftId: String(data.work_shift_id),
+  shiftName: data.shift_name || undefined,
+  shiftStartTime: data.shift_start_time || undefined,
+  shiftEndTime: data.shift_end_time || undefined,
+  workDate: data.work_date,
+  weekStart: data.week_start,
+  status: data.status as ShiftRegistrationStatus,
+  statusText: data.status_text || undefined,
+  note: data.note || undefined,
+  adminNote: data.admin_note || undefined,
+  approvedById: data.approved_by_id ? String(data.approved_by_id) : undefined,
+  approvedByName: data.approved_by_name || undefined,
+  approvedAt: data.approved_at || undefined,
+  createdAt: data.created_at || undefined
+});
+
+export const getShiftRegistrations = async (params?: {
+  userId?: string;
+  weekStart?: string;
+  status?: string;
+  startDate?: string;
+  endDate?: string;
+}): Promise<ShiftRegistration[]> => {
+  try {
+    let url = '/shift_registrations';
+    if (params) {
+      const searchParams = new URLSearchParams();
+      if (params.userId) searchParams.append('user_id', params.userId);
+      if (params.weekStart) searchParams.append('week_start', params.weekStart);
+      if (params.status) searchParams.append('status', params.status);
+      if (params.startDate) searchParams.append('start_date', params.startDate);
+      if (params.endDate) searchParams.append('end_date', params.endDate);
+      if (searchParams.toString()) url += `?${searchParams.toString()}`;
+    }
+    
+    const data = await fetchAPI(url);
+    return Array.isArray(data) ? data.map(mapShiftRegistrationFromApi) : [];
+  } catch (e) {
+    console.error("Get shift registrations failed:", e);
+    return [];
+  }
+};
+
+export const getMyShiftRegistrations = async (userId: string): Promise<{
+  currentWeek: ShiftRegistration[];
+  nextWeek: ShiftRegistration[];
+  canRegisterNextWeek: boolean;
+}> => {
+  const data = await fetchAPI(`/shift_registrations/my_registrations?user_id=${userId}`);
+  return {
+    currentWeek: (data.current_week || []).map(mapShiftRegistrationFromApi),
+    nextWeek: (data.next_week || []).map(mapShiftRegistrationFromApi),
+    canRegisterNextWeek: data.can_register_next_week || false
+  };
+};
+
+export const getAvailableShifts = async (userId: string): Promise<WorkShift[]> => {
+  const data = await fetchAPI(`/shift_registrations/available_shifts?user_id=${userId}`);
+  return Array.isArray(data) ? data.map((s: any) => ({
+    id: String(s.id),
+    name: s.name,
+    startTime: s.start_time,
+    endTime: s.end_time,
+    lateThreshold: s.late_threshold || 30,
+    departmentId: s.department_id ? String(s.department_id) : undefined,
+    departmentName: s.department_name
+  })) : [];
+};
+
+export const getPendingRegistrations = async (): Promise<ShiftRegistration[]> => {
+  try {
+    const data = await fetchAPI('/shift_registrations/pending');
+    return Array.isArray(data) ? data.map(mapShiftRegistrationFromApi) : [];
+  } catch (e) {
+    console.error("Get pending registrations failed:", e);
+    return [];
+  }
+};
+
+export const createShiftRegistration = async (registration: {
+  userId: string;
+  workShiftId: string;
+  workDate: string;
+  note?: string;
+}): Promise<ShiftRegistration> => {
+  const data = await fetchAPI('/shift_registrations', {
+    method: 'POST',
+    body: JSON.stringify({
+      shift_registration: {
+        user_id: Number(registration.userId),
+        work_shift_id: Number(registration.workShiftId),
+        work_date: registration.workDate,
+        note: registration.note
+      }
+    })
+  });
+  return mapShiftRegistrationFromApi(data);
+};
+
+export const bulkCreateShiftRegistrations = async (
+  userId: string,
+  registrations: Array<{ workShiftId: string; workDate: string; note?: string }>
+): Promise<{ created: ShiftRegistration[]; errors: any[]; successCount: number; errorCount: number }> => {
+  const fullUrl = `${API_URL}/shift_registrations/bulk_create`;
+  
+  const response = await fetch(fullUrl, {
+    method: 'POST',
+    mode: 'cors',
+    headers: getHeaders(),
+    body: JSON.stringify({
+      user_id: Number(userId),
+      registrations: registrations.map(r => ({
+        work_shift_id: Number(r.workShiftId),
+        work_date: r.workDate,
+        note: r.note
+      }))
+    })
+  });
+  
+  // Read response text first
+  const responseText = await response.text();
+  
+  // Parse JSON
+  let data: any;
+  try {
+    data = JSON.parse(responseText);
+  } catch (e) {
+    throw new Error('Invalid JSON response');
+  }
+  
+  // If 422 (validation errors), return the error data structure instead of throwing
+  if (response.status === 422 && data.errors && Array.isArray(data.errors)) {
+    return {
+      created: [],
+      errors: data.errors,
+      successCount: data.success_count || 0,
+      errorCount: data.error_count || data.errors.length
+    };
+  }
+  
+  // If not OK and not 422, throw error
+  if (!response.ok) {
+    const errorMessage = data.message || data.error || `Lỗi ${response.status}`;
+    throw new Error(errorMessage);
+  }
+  
+  // Success case
+  return {
+    created: (data.created || []).map(mapShiftRegistrationFromApi),
+    errors: data.errors || [],
+    successCount: data.success_count || 0,
+    errorCount: data.error_count || 0
+  };
+};
+
+export const deleteShiftRegistration = async (id: string): Promise<void> => {
+  await fetchAPI(`/shift_registrations/${id}`, { method: 'DELETE' });
+};
+
+export const approveShiftRegistration = async (id: string, adminId: string, note?: string): Promise<ShiftRegistration> => {
+  const data = await fetchAPI(`/shift_registrations/${id}/approve`, {
+    method: 'POST',
+    body: JSON.stringify({ admin_id: Number(adminId), note })
+  });
+  return mapShiftRegistrationFromApi(data);
+};
+
+export const rejectShiftRegistration = async (id: string, adminId: string, note?: string): Promise<{ message: string; id: string }> => {
+  const data = await fetchAPI(`/shift_registrations/${id}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ admin_id: Number(adminId), note })
+  });
+  return data;
+};
+
+export const bulkApproveShiftRegistrations = async (
+  ids: string[],
+  adminId: string,
+  note?: string
+): Promise<{ approved: string[]; errors: any[] }> => {
+  const data = await fetchAPI('/shift_registrations/bulk_approve', {
+    method: 'POST',
+    body: JSON.stringify({
+      ids: ids.map(Number),
+      admin_id: Number(adminId),
+      note
+    })
+  });
+  return {
+    approved: (data.approved || []).map(String),
+    errors: data.errors || []
+  };
+};
+
+// --- APP SETTINGS ---
+
+export const getAppSettings = async (): Promise<any> => {
+  try {
+    const data = await fetchAPI('/settings');
+    return data;
+  } catch (e) {
+    console.error("Get app settings failed:", e);
+    throw e;
+  }
+};
+
+export const updateAppSettings = async (settings: any): Promise<any> => {
+  try {
+    const data = await fetchAPI('/settings', {
+      method: 'PATCH',
+      body: JSON.stringify({ app_setting: settings })
+    });
+    return data;
+  } catch (e) {
+    console.error("Update app settings failed:", e);
+    throw e;
+  }
 };

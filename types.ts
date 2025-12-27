@@ -19,21 +19,83 @@ export interface Department {
   shiftsCount?: number;
 }
 
+export interface Position {
+  id: string;
+  name: string;
+  description?: string;
+  branchId?: string;
+  branchName?: string;
+  departmentId?: string;
+  departmentName?: string;
+  level: PositionLevel;
+  usersCount?: number;
+}
+
+export enum PositionLevel {
+  STAFF_LEVEL = 'staff_level',
+  TEAM_LEAD = 'team_lead',
+  MANAGER = 'manager',
+  DIRECTOR = 'director',
+  EXECUTIVE = 'executive'
+}
+
+export interface ShiftRegistration {
+  id: string;
+  userId: string;
+  userName?: string;
+  workShiftId: string;
+  shiftName?: string;
+  shiftStartTime?: string;
+  shiftEndTime?: string;
+  workDate: string;
+  weekStart: string;
+  status: ShiftRegistrationStatus;
+  statusText?: string;
+  note?: string;
+  adminNote?: string;
+  approvedById?: string;
+  approvedByName?: string;
+  approvedAt?: string;
+  createdAt?: string;
+}
+
+export enum ShiftRegistrationStatus {
+  PENDING = 'pending',
+  APPROVED = 'approved',
+  REJECTED = 'rejected'
+}
+
+export enum WorkScheduleType {
+  BOTH_SHIFTS = 'both_shifts',
+  MORNING_ONLY = 'morning_only',
+  AFTERNOON_ONLY = 'afternoon_only'
+}
+
+export enum UserStatus {
+  ACTIVE = 'active',
+  DEACTIVE = 'deactive'
+}
+
 export interface User {
   id: string;
   username: string;
   fullName: string;
   role: UserRole;
   avatar?: string;
+  status?: UserStatus;
   branchId?: string;
   branchName?: string;
   branchAddress?: string;
   departmentId?: string;
   departmentName?: string;
+  positionId?: string;
+  positionName?: string;
+  positionLevel?: PositionLevel;
   workAddress?: string;
   address?: string;
   phone?: string;
   birthday?: string;
+  workScheduleType?: WorkScheduleType;
 }
 
 export interface WorkSession {
@@ -45,10 +107,13 @@ export interface WorkSession {
   duration: number; // in seconds, 0 if active
   dateStr: string; // ISO date string YYYY-MM-DD for grouping
   workShiftId?: string;
+  shiftName?: string;
+  shiftRegistrationId?: string;
   isOnTime?: boolean;
   minutesLate?: number;
   isEarlyCheckout?: boolean;
   minutesBeforeEnd?: number;
+  forgotCheckout?: boolean;
   workSummary?: string;
   challenges?: string;
   suggestions?: string;

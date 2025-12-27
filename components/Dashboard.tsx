@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { User, WorkSession, UserRole, WorkShift } from '../types';
+import { User, WorkSession, UserRole, WorkShift, Department } from '../types';
 import * as api from '../services/api';
 import { AdminDashboard } from './AdminDashboard';
 import { MotivationQuote } from './MotivationQuote';
@@ -7,7 +7,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
   PieChart, Pie, Legend, LineChart, Line
 } from 'recharts';
-import { TrendingUp, Clock, CalendarCheck, Users, AlertTriangle, CheckCircle, Settings, Calendar } from 'lucide-react';
+import { TrendingUp, Clock, CalendarCheck, Users, AlertTriangle, CheckCircle, Settings, Calendar, Building, RefreshCw } from 'lucide-react';
 
 interface DashboardProps {
   user: User;
@@ -26,6 +26,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onShowSettings }) =>
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [sessions, setSessions] = useState<WorkSession[]>([]);
   
+  // Department view by date
+  const [selectedDate, setSelectedDate] = useState<string>(() => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  });
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [departmentSessions, setDepartmentSessions] = useState<Record<string, WorkSession[]>>({});
+  const [loadingDepartments, setLoadingDepartments] = useState(false);
+  
   const [summary, setSummary] = useState({ 
     totalHours: 0, 
     workDays: 0, 
@@ -40,6 +49,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onShowSettings }) =>
   useEffect(() => {
     loadStats();
   }, [user, dateFilter]);
+
+  useEffect(() => {
+    if (user.role === UserRole.ADMIN) {
+      loadDepartmentData();
+    }
+  }, [user, selectedDate]);
 
   const loadStats = async () => {
     setLoading(true);
@@ -277,6 +292,58 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onShowSettings }) =>
         totalMinutesEarlyCheckout: totalMinutesEarlyCheckout
     });
     setLoading(false);
+  };
+
+  const loadDepartmentData = async () => {
+    if (user.role !== UserRole.ADMIN) return;
+    
+    setLoadingDepartments(true);
+    try {
+      // Load departments
+      const depts = await api.getDepartments();
+      setDepartments(depts);
+      
+      // Load users if not already loaded
+      let users = allUsers;
+      if (users.length === 0) {
+        users = await api.getUsers();
+        setAllUsers(users);
+      }
+      
+      // Load all sessions for the selected date
+      const allSessions = await api.getAllHistory();
+      const dateStr = selectedDate;
+      
+      // Group sessions by department
+      const deptSessionsMap: Record<string, WorkSession[]> = {};
+      
+      depts.forEach(dept => {
+        deptSessionsMap[dept.id] = [];
+      });
+      
+      allSessions.forEach(session => {
+        // Check if session date matches selected date
+        const sessionDate = new Date(session.startTime);
+        const sessionDateStr = sessionDate.toISOString().split('T')[0];
+        
+        if (sessionDateStr === dateStr && session.userId) {
+          // Find user's department
+          const sessionUser = users.find(u => u.id === session.userId);
+          if (sessionUser && sessionUser.departmentId) {
+            if (!deptSessionsMap[sessionUser.departmentId]) {
+              deptSessionsMap[sessionUser.departmentId] = [];
+            }
+            deptSessionsMap[sessionUser.departmentId].push(session);
+          }
+        }
+      });
+      
+      setDepartmentSessions(deptSessionsMap);
+    } catch (error) {
+      console.error('Error loading department data:', error);
+    } finally {
+      setLoadingDepartments(false);
+    }
   };
 
   const StatCard = ({ title, value, icon: Icon, color, subtext }: any) => (
@@ -530,6 +597,157 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onShowSettings }) =>
 
                 {/* Admin Staff List */}
                 <AdminDashboard allUsers={allUsers} sessions={sessions} dateFilter={dateFilter} />
+
+                {/* Department View by Date */}
+                <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
+                        <Building size={20} className="text-purple-600" />
+                        Xem phòng ban theo ngày
+                      </h3>
+                      <p className="text-sm text-slate-500">Chọn ngày để xem chi tiết ca làm việc của từng phòng ban</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="date"
+                        value={selectedDate}
+                        onChange={(e) => setSelectedDate(e.target.value)}
+                        className="px-4 py-2 border border-slate-300 rounded-lg focus:border-purple-500 focus:outline-none text-slate-700"
+                      />
+                      <button
+                        onClick={loadDepartmentData}
+                        disabled={loadingDepartments}
+                        className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                      >
+                        <RefreshCw size={16} className={loadingDepartments ? 'animate-spin' : ''} />
+                        Tải lại
+                      </button>
+                    </div>
+                  </div>
+
+                  {loadingDepartments ? (
+                    <div className="text-center py-8 text-slate-500">
+                      Đang tải dữ liệu...
+                    </div>
+                  ) : departments.length === 0 ? (
+                    <div className="text-center py-8 text-slate-500">
+                      Chưa có phòng ban nào
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {departments.map(dept => {
+                        const deptSessions = departmentSessions[dept.id] || [];
+                        const totalSessions = deptSessions.length;
+                        const onTimeCount = deptSessions.filter(s => s.isOnTime).length;
+                        const lateCount = deptSessions.filter(s => !s.isOnTime).length;
+                        const totalHours = deptSessions.reduce((sum, s) => sum + (s.duration || 0), 0) / 3600;
+                        
+                        return (
+                          <div key={dept.id} className="border border-slate-200 rounded-lg overflow-hidden">
+                            <div className="bg-gradient-to-r from-purple-50 to-indigo-50 p-4 border-b border-slate-200">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 rounded-lg bg-purple-600 flex items-center justify-center">
+                                    <Building size={20} className="text-white" />
+                                  </div>
+                                  <div>
+                                    <h4 className="font-bold text-slate-800">{dept.name}</h4>
+                                    {dept.description && (
+                                      <p className="text-sm text-slate-500">{dept.description}</p>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-4 text-sm">
+                                  <div className="text-center">
+                                    <div className="font-bold text-slate-800">{totalSessions}</div>
+                                    <div className="text-slate-500">Ca làm</div>
+                                  </div>
+                                  <div className="text-center">
+                                    <div className="font-bold text-green-600">{onTimeCount}</div>
+                                    <div className="text-slate-500">Đúng giờ</div>
+                                  </div>
+                                  <div className="text-center">
+                                    <div className="font-bold text-red-600">{lateCount}</div>
+                                    <div className="text-slate-500">Muộn</div>
+                                  </div>
+                                  <div className="text-center">
+                                    <div className="font-bold text-blue-600">{totalHours.toFixed(1)}h</div>
+                                    <div className="text-slate-500">Tổng giờ</div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                            
+                            {deptSessions.length > 0 ? (
+                              <div className="overflow-x-auto">
+                                <table className="w-full">
+                                  <thead className="bg-slate-50 border-b border-slate-200">
+                                    <tr>
+                                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Nhân viên</th>
+                                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Giờ vào</th>
+                                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Giờ ra</th>
+                                      <th className="px-4 py-3 text-center text-xs font-semibold text-slate-700">Thời lượng</th>
+                                      <th className="px-4 py-3 text-center text-xs font-semibold text-slate-700">Trạng thái</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {deptSessions.map(session => {
+                                      const user = allUsers.find(u => u.id === session.userId);
+                                      return (
+                                        <tr key={session.id} className="border-b border-slate-100 hover:bg-slate-50">
+                                          <td className="px-4 py-3 text-sm">
+                                            <div>
+                                              <p className="font-medium text-slate-800">{user?.fullName || 'N/A'}</p>
+                                              <p className="text-xs text-slate-500">{user?.username || ''}</p>
+                                            </div>
+                                          </td>
+                                          <td className="px-4 py-3 text-sm">
+                                            {new Date(session.startTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                                          </td>
+                                          <td className="px-4 py-3 text-sm">
+                                            {session.endTime 
+                                              ? new Date(session.endTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+                                              : '—'}
+                                          </td>
+                                          <td className="px-4 py-3 text-center text-sm font-medium">
+                                            {Math.round((session.duration || 0) / 60)}p
+                                          </td>
+                                          <td className="px-4 py-3 text-center">
+                                            <div className="flex justify-center gap-1 flex-wrap">
+                                              {session.isOnTime ? (
+                                                <span className="inline-block bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-medium">
+                                                  ✓ Đúng giờ
+                                                </span>
+                                              ) : (
+                                                <span className="inline-block bg-red-100 text-red-800 px-2 py-1 rounded text-xs font-medium">
+                                                  ✗ Muộn {session.minutesLate || 0}p
+                                                </span>
+                                              )}
+                                              {session.isEarlyCheckout && (
+                                                <span className="inline-block bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs font-medium">
+                                                  ⏱ Sớm {session.minutesBeforeEnd || 0}p
+                                                </span>
+                                              )}
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            ) : (
+                              <div className="p-6 text-center text-slate-400 text-sm">
+                                Không có ca làm việc nào trong ngày {new Date(selectedDate).toLocaleDateString('vi-VN')}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
             </>
         ) : (
             <>

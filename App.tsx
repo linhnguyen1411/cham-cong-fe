@@ -8,7 +8,12 @@ import { Dashboard } from './components/Dashboard';
 import { ShiftSettings } from './components/ShiftSettings';
 import { StaffManagement } from './components/StaffManagement';
 import { DepartmentSettings } from './components/DepartmentSettings';
+import PositionSettings from './components/PositionSettings';
+import ShiftRegistration from './components/ShiftRegistration';
+import ShiftApproval from './components/ShiftApproval';
+import StaffSchedule from './components/StaffSchedule';
 import ProfileSettings from './components/ProfileSettings';
+import { AppSettings } from './components/AppSettings';
 import { User } from './types';
 import * as api from './services/api';
 
@@ -73,9 +78,14 @@ const App: React.FC = () => {
       {view === 'dashboard' && <Dashboard user={user} onShowSettings={handleShowSettings} />}
       {view === 'tracker' && <TimeTracker user={user} />}
       {view === 'history' && <History user={user} />}
+      {view === 'shift-registration' && <ShiftRegistration user={user} />}
       {view === 'department-settings' && <DepartmentSettings />}
+      {view === 'position-settings' && <PositionSettings />}
       {view === 'shift-settings' && <ShiftSettings />}
+      {view === 'shift-approval' && <ShiftApproval user={user} />}
+      {view === 'staff-schedule' && <StaffSchedule user={user} />}
       {view === 'staff-management' && <StaffManagement />}
+      {view === 'app-settings' && <AppSettings />}
       
       {showProfileSettings && (
         <ProfileSettings

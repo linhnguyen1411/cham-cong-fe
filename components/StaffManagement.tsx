@@ -1,31 +1,38 @@
 import React, { useState, useEffect } from 'react';
-import { User, UserRole, Branch, Department } from '../types';
+import { User, UserRole, UserStatus, Branch, Department, Position, WorkScheduleType } from '../types';
 import * as api from '../services/api';
+import { CreateUserModal } from './CreateUserModal';
 import { 
   Users, Search, Filter, Edit, Eye, X, Building2, MapPin, Phone, 
-  Calendar, Mail, UserCog, Plus, Trash2, Save, ChevronLeft, Layers 
+  Calendar, Mail, UserCog, Plus, Trash2, Save, ChevronLeft, Layers, Briefcase 
 } from 'lucide-react';
 
 export const StaffManagement: React.FC = () => {
   const [staff, setStaff] = useState<User[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [positions, setPositions] = useState<Position[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterBranch, setFilterBranch] = useState<string>('all');
   const [filterDepartment, setFilterDepartment] = useState<string>('all');
   const [filterRole, setFilterRole] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('active'); // 'active', 'deactive', 'all'
   
   // Detail/Edit modal
   const [selectedStaff, setSelectedStaff] = useState<User | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<User>>({});
+  const [passwordForm, setPasswordForm] = useState({ password: '', passwordConfirmation: '' });
   const [saving, setSaving] = useState(false);
   
   // Branch management modal
   const [showBranchModal, setShowBranchModal] = useState(false);
   const [branchForm, setBranchForm] = useState({ name: '', address: '', description: '' });
   const [editingBranch, setEditingBranch] = useState<Branch | null>(null);
+  
+  // Create user modal
+  const [showCreateUserModal, setShowCreateUserModal] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -33,14 +40,16 @@ export const StaffManagement: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
-    const [staffData, branchData, departmentData] = await Promise.all([
+    const [staffData, branchData, departmentData, positionData] = await Promise.all([
       api.getAllStaff(),
       api.getBranches(),
-      api.getDepartments()
+      api.getDepartments(),
+      api.getPositions()
     ]);
     setStaff(staffData);
     setBranches(branchData);
     setDepartments(departmentData);
+    setPositions(positionData);
     setLoading(false);
   };
 
@@ -54,12 +63,16 @@ export const StaffManagement: React.FC = () => {
     const matchRole = filterRole === 'all' || 
                      (filterRole === 'admin' && s.role === UserRole.ADMIN) ||
                      (filterRole === 'staff' && s.role === UserRole.STAFF);
-    return matchSearch && matchBranch && matchDepartment && matchRole;
+    const matchStatus = filterStatus === 'all' ||
+                       (filterStatus === 'active' && s.status !== UserStatus.DEACTIVE) ||
+                       (filterStatus === 'deactive' && s.status === UserStatus.DEACTIVE);
+    return matchSearch && matchBranch && matchDepartment && matchRole && matchStatus;
   });
 
   const handleViewDetail = (user: User) => {
     setSelectedStaff(user);
     setEditForm(user);
+    setPasswordForm({ password: '', passwordConfirmation: '' });
     setIsEditing(false);
   };
 
@@ -69,11 +82,29 @@ export const StaffManagement: React.FC = () => {
 
   const handleSave = async () => {
     if (!selectedStaff) return;
+    
+    // Validate password if provided
+    if (passwordForm.password) {
+      if (passwordForm.password.length < 6) {
+        alert('Mật khẩu phải có ít nhất 6 ký tự');
+        return;
+      }
+      if (passwordForm.password !== passwordForm.passwordConfirmation) {
+        alert('Mật khẩu xác nhận không khớp');
+        return;
+      }
+    }
+    
     setSaving(true);
     try {
-      const updated = await api.updateStaff(selectedStaff.id, editForm);
+      const updateData = { ...editForm };
+      if (passwordForm.password) {
+        (updateData as any).password = passwordForm.password;
+      }
+      const updated = await api.updateStaff(selectedStaff.id, updateData);
       setStaff(prev => prev.map(s => s.id === updated.id ? updated : s));
       setSelectedStaff(updated);
+      setPasswordForm({ password: '', passwordConfirmation: '' });
       setIsEditing(false);
     } catch (e: any) {
       alert('Lỗi: ' + e.message);
@@ -114,6 +145,20 @@ export const StaffManagement: React.FC = () => {
     }
   };
 
+  const handleDeactivateStaff = async (user: User) => {
+    if (!confirm(`Xác nhận đánh dấu nhân viên "${user.fullName}" đã nghỉ việc?`)) return;
+    try {
+      const updated = await api.deactivateStaff(user.id);
+      setStaff(prev => prev.map(s => s.id === updated.id ? updated : s));
+      if (selectedStaff?.id === user.id) {
+        setSelectedStaff(updated);
+      }
+      alert('Đã đánh dấu nhân viên nghỉ việc');
+    } catch (e: any) {
+      alert('Lỗi: ' + e.message);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -129,13 +174,22 @@ export const StaffManagement: React.FC = () => {
             </p>
           </div>
           
-          <button
-            onClick={() => setShowBranchModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-          >
-            <Building2 size={18} />
-            Quản lý chi nhánh
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowCreateUserModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
+            >
+              <Plus size={18} />
+              Tạo nhân viên mới
+            </button>
+            <button
+              onClick={() => setShowBranchModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+            >
+              <Building2 size={18} />
+              Quản lý chi nhánh
+            </button>
+          </div>
         </div>
       </div>
 
@@ -187,6 +241,16 @@ export const StaffManagement: React.FC = () => {
               <option value="admin">Admin</option>
               <option value="staff">Nhân viên</option>
             </select>
+            
+            <select
+              value={filterStatus}
+              onChange={e => setFilterStatus(e.target.value)}
+              className="px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="active">Đang làm việc</option>
+              <option value="deactive">Đã nghỉ việc</option>
+              <option value="all">Tất cả</option>
+            </select>
           </div>
         </div>
       </div>
@@ -200,7 +264,7 @@ export const StaffManagement: React.FC = () => {
                 <th className="px-6 py-4 text-left">Nhân viên</th>
                 <th className="px-6 py-4 text-left">Chi nhánh</th>
                 <th className="px-6 py-4 text-left">Khối</th>
-                <th className="px-6 py-4 text-left">Địa chỉ làm việc</th>
+                <th className="px-6 py-4 text-left">Vị trí</th>
                 <th className="px-6 py-4 text-left">Vai trò</th>
                 <th className="px-6 py-4 text-left">Liên hệ</th>
                 <th className="px-6 py-4 text-center">Thao tác</th>
@@ -257,8 +321,15 @@ export const StaffManagement: React.FC = () => {
                         <span className="text-slate-400 text-sm">Chưa phân</span>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-sm text-slate-600">
-                      {user.workAddress || user.branchAddress || '-'}
+                    <td className="px-6 py-4">
+                      {user.positionName ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 text-emerald-700 rounded text-sm">
+                          <Briefcase size={14} />
+                          {user.positionName}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 text-sm">Chưa phân</span>
+                      )}
                     </td>
                     <td className="px-6 py-4">
                       <span className={`inline-flex px-2 py-1 rounded text-xs font-medium ${
@@ -281,6 +352,20 @@ export const StaffManagement: React.FC = () => {
                         >
                           <Eye size={18} />
                         </button>
+                        {user.status !== UserStatus.DEACTIVE && (
+                          <button
+                            onClick={() => handleDeactivateStaff(user)}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
+                            title="Đánh dấu nghỉ việc"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        )}
+                        {user.status === UserStatus.DEACTIVE && (
+                          <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded">
+                            Đã nghỉ
+                          </span>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -396,6 +481,47 @@ export const StaffManagement: React.FC = () => {
                 </div>
 
                 <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Vị trí</label>
+                  {isEditing ? (
+                    <select
+                      value={editForm.positionId || ''}
+                      onChange={e => setEditForm(prev => ({ ...prev, positionId: e.target.value || undefined }))}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Chưa phân vị trí</option>
+                      {positions
+                        .filter(p => !editForm.departmentId || !p.departmentId || p.departmentId === editForm.departmentId)
+                        .map(p => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                    </select>
+                  ) : (
+                    <p className="text-slate-800">{selectedStaff.positionName || 'Chưa phân'}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Ca làm việc</label>
+                  {isEditing ? (
+                    <select
+                      value={editForm.workScheduleType || WorkScheduleType.BOTH_SHIFTS}
+                      onChange={e => setEditForm(prev => ({ ...prev, workScheduleType: e.target.value as WorkScheduleType }))}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value={WorkScheduleType.BOTH_SHIFTS}>2 ca (Sáng + Chiều)</option>
+                      <option value={WorkScheduleType.MORNING_ONLY}>Chỉ ca sáng</option>
+                      <option value={WorkScheduleType.AFTERNOON_ONLY}>Chỉ ca chiều</option>
+                    </select>
+                  ) : (
+                    <p className="text-slate-800">
+                      {editForm.workScheduleType === WorkScheduleType.MORNING_ONLY ? 'Chỉ ca sáng' :
+                       editForm.workScheduleType === WorkScheduleType.AFTERNOON_ONLY ? 'Chỉ ca chiều' :
+                       '2 ca (Sáng + Chiều)'}
+                    </p>
+                  )}
+                </div>
+
+                <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Địa chỉ làm việc</label>
                   {isEditing ? (
                     <input
@@ -455,6 +581,42 @@ export const StaffManagement: React.FC = () => {
                     <p className="text-slate-800">{selectedStaff.address || '-'}</p>
                   )}
                 </div>
+
+                {/* Password fields - only show when editing */}
+                {isEditing && (
+                  <>
+                    <div className="md:col-span-2 border-t border-slate-200 pt-4 mt-2">
+                      <h4 className="text-sm font-semibold text-slate-700 mb-3">Đổi mật khẩu (tùy chọn)</h4>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Mật khẩu mới</label>
+                      <input
+                        type="password"
+                        value={passwordForm.password}
+                        onChange={e => setPasswordForm(prev => ({ ...prev, password: e.target.value }))}
+                        placeholder="Để trống nếu không đổi mật khẩu"
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Xác nhận mật khẩu</label>
+                      <input
+                        type="password"
+                        value={passwordForm.passwordConfirmation}
+                        onChange={e => setPasswordForm(prev => ({ ...prev, passwordConfirmation: e.target.value }))}
+                        placeholder="Nhập lại mật khẩu mới"
+                        className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 ${
+                          passwordForm.password && passwordForm.passwordConfirmation && passwordForm.password !== passwordForm.passwordConfirmation
+                            ? 'border-red-300 focus:ring-red-500'
+                            : 'border-slate-200 focus:ring-blue-500'
+                        }`}
+                      />
+                      {passwordForm.password && passwordForm.passwordConfirmation && passwordForm.password !== passwordForm.passwordConfirmation && (
+                        <p className="text-red-500 text-xs mt-1">Mật khẩu không khớp</p>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -608,6 +770,16 @@ export const StaffManagement: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Create User Modal */}
+      <CreateUserModal
+        isOpen={showCreateUserModal}
+        onClose={() => setShowCreateUserModal(false)}
+        onSuccess={() => {
+          loadData();
+          setShowCreateUserModal(false);
+        }}
+      />
     </div>
   );
 };
