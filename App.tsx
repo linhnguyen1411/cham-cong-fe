@@ -12,6 +12,7 @@ import PositionSettings from './components/PositionSettings';
 import ShiftRegistration from './components/ShiftRegistration';
 import ShiftApproval from './components/ShiftApproval';
 import StaffSchedule from './components/StaffSchedule';
+import MySchedule from './components/MySchedule';
 import ProfileSettings from './components/ProfileSettings';
 import { AppSettings } from './components/AppSettings';
 import { User } from './types';
@@ -29,7 +30,9 @@ const App: React.FC = () => {
     if (authData) {
       setUser(authData.user);
       // Set default view based on user role
-      setView(authData.user.role === 'ADMIN' ? 'dashboard' : 'tracker');
+      // Admin: show staff schedule (lịch làm việc)
+      // Staff: show tracker (chấm công)
+      setView(authData.user.role === 'ADMIN' ? 'staff-schedule' : 'tracker');
     }
     setIsLoading(false);
   }, []);
@@ -38,7 +41,9 @@ const App: React.FC = () => {
     const response = await api.login(u, p, remember);
     setUser(response.user);
     // Set default view based on user role
-    setView(response.user.role === 'ADMIN' ? 'dashboard' : 'tracker');
+    // Admin: show staff schedule (lịch làm việc)
+    // Staff: show tracker (chấm công)
+    setView(response.user.role === 'ADMIN' ? 'staff-schedule' : 'tracker');
   };
 
   const handleLogout = () => {
@@ -84,6 +89,7 @@ const App: React.FC = () => {
       {view === 'shift-settings' && <ShiftSettings />}
       {view === 'shift-approval' && <ShiftApproval user={user} />}
       {view === 'staff-schedule' && <StaffSchedule user={user} />}
+      {view === 'my-schedule' && <MySchedule user={user} />}
       {view === 'staff-management' && <StaffManagement />}
       {view === 'app-settings' && <AppSettings />}
       

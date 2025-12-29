@@ -54,6 +54,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, currentView, onN
             <>
             <NavItem view="tracker" icon={Clock} label="Chấm công" />
               <NavItem view="shift-registration" icon={CalendarPlus} label="Đăng ký ca" />
+              <NavItem view="my-schedule" icon={Calendar} label="Lịch làm việc" />
             </>
           )}
           <NavItem view="history" icon={History} label="Lịch sử" />
@@ -177,6 +178,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, currentView, onN
                 <>
                   <NavItem view="tracker" icon={Clock} label="Chấm công" onClick={closeMobileMenu} />
                   <NavItem view="shift-registration" icon={CalendarPlus} label="Đăng ký ca" onClick={closeMobileMenu} />
+                  <NavItem view="my-schedule" icon={Calendar} label="Lịch làm việc" onClick={closeMobileMenu} />
                 </>
               )}
               
@@ -262,6 +264,15 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, currentView, onN
             >
               <Clock size={22}/>
               <span className="text-[10px] mt-1 font-medium">Chấm công</span>
+            </button>
+            <button 
+              onClick={() => onNavigate('my-schedule')} 
+              className={`flex flex-col items-center p-2 rounded-xl min-w-[60px] transition ${
+                currentView === 'my-schedule' ? 'text-blue-600 bg-blue-50' : 'text-slate-400'
+              }`}
+            >
+              <Calendar size={22}/>
+              <span className="text-[10px] mt-1 font-medium">Lịch làm việc</span>
             </button>
             <button 
               onClick={() => onNavigate('shift-registration')} 
