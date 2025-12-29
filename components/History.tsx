@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { WorkSession, FilterType, User, UserRole } from '../types';
+import { WorkSession, FilterType, User, UserRole, ForgotCheckinRequest } from '../types';
 import * as api from '../services/api';
 import { Calendar, Filter, Download, Eye } from 'lucide-react';
 import { MotivationQuote } from './MotivationQuote';
@@ -78,14 +78,26 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
     return Math.round((seconds / 3600) * 100) / 100; // Round to 2 decimal places
   };
 
-  const exportToExcel = () => {
+  const exportToExcel = async () => {
     if (filteredSessions.length === 0) {
       alert('Không có dữ liệu để xuất!');
       return;
     }
 
+    // Sort sessions theo nhân viên (tên), sau đó theo thời gian bắt đầu
+    const sortedSessions = [...filteredSessions].sort((a, b) => {
+      // So sánh theo tên nhân viên (alphabetically)
+      const nameA = (a.userName || 'N/A').toLowerCase();
+      const nameB = (b.userName || 'N/A').toLowerCase();
+      if (nameA !== nameB) {
+        return nameA.localeCompare(nameB, 'vi');
+      }
+      // Nếu cùng tên, sort theo thời gian bắt đầu (cũ nhất trước)
+      return a.startTime - b.startTime;
+    });
+
     // Sheet 1: Chi tiết từng ca làm việc
-    const detailData = filteredSessions.map(session => {
+    const detailData = sortedSessions.map(session => {
       const startDate = new Date(session.startTime);
       const endDate = session.endTime ? new Date(session.endTime) : null;
       
@@ -97,7 +109,7 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
         'Giờ ra': endDate ? endDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : 'Chưa checkout',
         'Tổng giờ': session.duration > 0 ? formatDurationHours(session.duration) : 0,
         'Tổng phút': session.duration > 0 ? Math.floor(session.duration / 60) : 0,
-        'Trạng thái': session.endTime ? 'Hoàn thành' : 'Đang làm việc',
+        'Trạng thái': session.forgotCheckout ? 'Quên checkout' : (session.endTime ? 'Hoàn thành' : 'Đang làm việc'),
         'Đúng giờ': session.isOnTime !== false ? 'Có' : 'Không',
         'Muộn (phút)': session.minutesLate || 0,
         'Quên checkout': session.forgotCheckout ? 'Có' : 'Không',
@@ -119,7 +131,7 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
       forgotCheckoutCount: number;
     }>();
 
-    filteredSessions.forEach(session => {
+    sortedSessions.forEach(session => {
       const userName = session.userName || 'N/A';
       
       if (!summaryMap.has(userName)) {
@@ -142,7 +154,8 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
         summary.totalMinutes += Math.floor(session.duration / 60);
       }
       
-      if (session.endTime) {
+      // Chỉ tính ca hoàn thành nếu có endTime VÀ không phải quên checkout
+      if (session.endTime && !session.forgotCheckout) {
         summary.completedSessions++;
       }
       
@@ -155,18 +168,25 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
       }
     });
 
-    const summaryData = Array.from(summaryMap.values()).map(summary => ({
-      'Nhân viên': summary.userName,
-      'Tổng số ca': summary.totalSessions,
-      'Số ca hoàn thành': summary.completedSessions,
-      'Tổng giờ làm việc': Math.round(summary.totalHours * 100) / 100,
-      'Tổng phút làm việc': summary.totalMinutes,
-      'Số lần muộn': summary.lateCount,
-      'Số lần quên checkout': summary.forgotCheckoutCount,
-      'Giờ trung bình/ca': summary.totalSessions > 0 
-        ? Math.round((summary.totalHours / summary.totalSessions) * 100) / 100 
-        : 0
-    }));
+    // Sort summary data theo tên nhân viên (alphabetically)
+    const summaryData = Array.from(summaryMap.values())
+      .sort((a, b) => {
+        const nameA = (a.userName || 'N/A').toLowerCase();
+        const nameB = (b.userName || 'N/A').toLowerCase();
+        return nameA.localeCompare(nameB, 'vi');
+      })
+      .map(summary => ({
+        'Nhân viên': summary.userName,
+        'Tổng số ca': summary.totalSessions,
+        'Số ca hoàn thành': summary.completedSessions,
+        'Tổng giờ làm việc': Math.round(summary.totalHours * 100) / 100,
+        'Tổng phút làm việc': summary.totalMinutes,
+        'Số lần muộn': summary.lateCount,
+        'Số lần quên checkout': summary.forgotCheckoutCount,
+        'Giờ trung bình/ca': summary.totalSessions > 0 
+          ? Math.round((summary.totalHours / summary.totalSessions) * 100) / 100 
+          : 0
+      }));
 
     // Create workbook
     const wb = XLSX.utils.book_new();
@@ -178,6 +198,38 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
     // Add summary sheet
     const wsSummary = XLSX.utils.json_to_sheet(summaryData);
     XLSX.utils.book_append_sheet(wb, wsSummary, 'Tổng hợp bảng lương');
+
+    // Add forgot checkin requests sheet
+    try {
+      const requests = await api.getForgotCheckinRequests();
+      const requestsData = requests
+        .sort((a, b) => {
+          const nameA = (a.userName || 'N/A').toLowerCase();
+          const nameB = (b.userName || 'N/A').toLowerCase();
+          if (nameA !== nameB) {
+            return nameA.localeCompare(nameB, 'vi');
+          }
+          return new Date(b.requestDate).getTime() - new Date(a.requestDate).getTime();
+        })
+        .map(req => ({
+          'Ngày yêu cầu': new Date(req.requestDate).toLocaleDateString('vi-VN'),
+          'Nhân viên': req.userName || 'N/A',
+          'Loại': req.requestType === 'checkin' ? 'Quên checkin' : 'Quên checkout',
+          'Lý do': req.reason,
+          'Trạng thái': req.status === 'approved' ? 'Đã duyệt' : req.status === 'rejected' ? 'Từ chối' : 'Chờ duyệt',
+          'Người duyệt': req.approvedByName || '',
+          'Ngày duyệt': req.approvedAt ? new Date(req.approvedAt).toLocaleString('vi-VN') : '',
+          'Lý do từ chối': req.rejectedReason || '',
+          'Ngày tạo': req.createdAt ? new Date(req.createdAt).toLocaleString('vi-VN') : ''
+        }));
+
+      if (requestsData.length > 0) {
+        const wsRequests = XLSX.utils.json_to_sheet(requestsData);
+        XLSX.utils.book_append_sheet(wb, wsRequests, 'Form xin quên checkin/out');
+      }
+    } catch (err) {
+      console.error('Error loading forgot checkin requests:', err);
+    }
 
     // Generate filename
     const now = new Date();
@@ -247,29 +299,52 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
                <tr><td colSpan={6} className="px-6 py-8 text-center text-slate-400">Không có dữ liệu trong khoảng thời gian này.</td></tr>
             ) : (
               filteredSessions.map((session) => (
-                <tr key={session.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-6 py-4 text-slate-700 font-medium flex items-center">
-                    <Calendar size={16} className="mr-2 text-slate-400" />
+                <tr 
+                  key={session.id} 
+                  className={`transition-colors ${
+                    session.forgotCheckout 
+                      ? 'bg-red-50 hover:bg-red-100' 
+                      : 'hover:bg-slate-50'
+                  }`}
+                >
+                  <td className={`px-6 py-4 font-medium flex items-center ${
+                    session.forgotCheckout ? 'text-red-700' : 'text-slate-700'
+                  }`}>
+                    <Calendar size={16} className={`mr-2 ${
+                      session.forgotCheckout ? 'text-red-400' : 'text-slate-400'
+                    }`} />
                     {new Date(session.startTime).toLocaleDateString('vi-VN')}
                   </td>
                   {user.role === UserRole.ADMIN && (
-                      <td className="px-6 py-4 text-slate-600">
+                      <td className={`px-6 py-4 ${
+                        session.forgotCheckout ? 'text-red-600' : 'text-slate-600'
+                      }`}>
                           {session.userName || 'Unknown'}
                       </td>
                   )}
-                  <td className="px-6 py-4 text-slate-600 font-mono text-sm">
+                  <td className={`px-6 py-4 font-mono text-sm ${
+                    session.forgotCheckout ? 'text-red-600' : 'text-slate-600'
+                  }`}>
                     {new Date(session.startTime).toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'})}
                   </td>
-                  <td className="px-6 py-4 text-slate-600 font-mono text-sm">
+                  <td className={`px-6 py-4 font-mono text-sm ${
+                    session.forgotCheckout ? 'text-red-600' : 'text-slate-600'
+                  }`}>
                     {session.endTime 
                         ? new Date(session.endTime).toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'}) 
                         : '--:--'}
                   </td>
-                  <td className="px-6 py-4 text-slate-800 font-bold">
+                  <td className={`px-6 py-4 font-bold ${
+                    session.forgotCheckout ? 'text-red-800' : 'text-slate-800'
+                  }`}>
                     {session.duration > 0 ? formatDuration(session.duration) : '-'}
                   </td>
                   <td className="px-6 py-4">
-                    {session.endTime ? (
+                    {session.forgotCheckout ? (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                            Quên checkout
+                        </span>
+                    ) : session.endTime ? (
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                             Hoàn thành
                         </span>
@@ -280,7 +355,7 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
                     )}
                   </td>
                   <td className="px-6 py-4">
-                    {session.endTime && (
+                    {session.endTime && !session.forgotCheckout && (
                       <button
                         onClick={() => {
                           setSelectedSession(session);

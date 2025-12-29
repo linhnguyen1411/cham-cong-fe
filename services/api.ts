@@ -1,5 +1,5 @@
 
-import { User, WorkSession, AuthResponse, UserRole, UserStatus, WorkShift, Branch, Department, Position, ShiftRegistration, PositionLevel, ShiftRegistrationStatus, WorkScheduleType } from '../types';
+import { User, WorkSession, AuthResponse, UserRole, UserStatus, WorkShift, Branch, Department, Position, ShiftRegistration, PositionLevel, ShiftRegistrationStatus, WorkScheduleType, AppSetting, ForgotCheckinRequest } from '../types';
 
 const STORAGE_KEYS = {
   CURRENT_USER: 'timekeep_user'
@@ -292,17 +292,41 @@ export const createUser = async (userData: {
     passwordConfirmation: string;
     fullName: string;
     role: 'admin' | 'staff';
+    branchId?: string;
+    departmentId?: string;
+    positionId?: string;
+    workScheduleType?: WorkScheduleType;
+    workAddress?: string;
 }): Promise<User> => {
+    const payload: any = {
+        username: userData.username,
+        password: userData.password,
+        password_confirmation: userData.passwordConfirmation,
+        full_name: userData.fullName,
+        role: userData.role
+    };
+    
+    // Add optional fields if provided
+    if (userData.branchId) {
+        payload.branch_id = Number(userData.branchId);
+    }
+    if (userData.departmentId) {
+        payload.department_id = Number(userData.departmentId);
+    }
+    if (userData.positionId) {
+        payload.position_id = Number(userData.positionId);
+    }
+    if (userData.workScheduleType) {
+        payload.work_schedule_type = userData.workScheduleType;
+    }
+    if (userData.workAddress) {
+        payload.work_address = userData.workAddress;
+    }
+    
     const data = await fetchAPI('/users', {
         method: 'POST',
         body: JSON.stringify({
-            user: {
-                username: userData.username,
-                password: userData.password,
-                password_confirmation: userData.passwordConfirmation,
-                full_name: userData.fullName,
-                role: userData.role
-            }
+            user: payload
         })
     });
     return mapUserFromApi(data);
@@ -1062,4 +1086,192 @@ export const adminDeleteShiftRegistration = async (id: string): Promise<void> =>
   await fetchAPI(`/shift_registrations/${id}`, {
     method: 'DELETE'
   });
+};
+
+// --- SETTINGS ---
+
+export const getSettings = async (): Promise<AppSetting> => {
+  const data = await fetchAPI('/settings');
+  return {
+    id: data.id?.toString(),
+    companyName: data.company_name || '',
+    requireIpCheck: data.require_ip_check || false,
+    allowedIps: data.allowed_ips || [],
+    maxUserOffDaysPerWeek: data.max_user_off_days_per_week,
+    maxUserOffShiftsPerWeek: data.max_user_off_shifts_per_week,
+    maxShiftOffCountPerDay: data.max_shift_off_count_per_day
+  };
+};
+
+export const updateSettings = async (settings: Partial<AppSetting>): Promise<AppSetting> => {
+  const data = await fetchAPI('/settings', {
+    method: 'PATCH',
+    body: JSON.stringify({
+      app_setting: {
+        company_name: settings.companyName,
+        require_ip_check: settings.requireIpCheck,
+        allowed_ips: settings.allowedIps || [],
+        max_user_off_days_per_week: settings.maxUserOffDaysPerWeek,
+        max_user_off_shifts_per_week: settings.maxUserOffShiftsPerWeek,
+        max_shift_off_count_per_day: settings.maxShiftOffCountPerDay
+      }
+    })
+  });
+  return {
+    id: data.id?.toString(),
+    companyName: data.company_name || '',
+    requireIpCheck: data.require_ip_check || false,
+    allowedIps: data.allowed_ips || [],
+    maxUserOffDaysPerWeek: data.max_user_off_days_per_week,
+    maxUserOffShiftsPerWeek: data.max_user_off_shifts_per_week,
+    maxShiftOffCountPerDay: data.max_shift_off_count_per_day
+  };
+};
+
+// --- FORGOT CHECKIN REQUESTS ---
+
+export const getForgotCheckinRequests = async (): Promise<ForgotCheckinRequest[]> => {
+  const data = await fetchAPI('/forgot_checkin_requests');
+  return data.map((r: any) => ({
+    id: r.id.toString(),
+    userId: r.user_id.toString(),
+    userName: r.user_name,
+    requestDate: r.request_date,
+    requestType: r.request_type,
+    requestTime: r.request_time,
+    reason: r.reason,
+    status: r.status,
+    approvedById: r.approved_by_id?.toString(),
+    approvedByName: r.approved_by_name,
+    approvedAt: r.approved_at,
+    rejectedReason: r.rejected_reason,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at
+  }));
+};
+
+export const getMyForgotCheckinRequests = async (): Promise<ForgotCheckinRequest[]> => {
+  const data = await fetchAPI('/forgot_checkin_requests/my_requests');
+  return data.map((r: any) => ({
+    id: r.id.toString(),
+    userId: r.user_id.toString(),
+    userName: r.user_name,
+    requestDate: r.request_date,
+    requestType: r.request_type,
+    requestTime: r.request_time,
+    reason: r.reason,
+    status: r.status,
+    approvedById: r.approved_by_id?.toString(),
+    approvedByName: r.approved_by_name,
+    approvedAt: r.approved_at,
+    rejectedReason: r.rejected_reason,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at
+  }));
+};
+
+export const getPendingForgotCheckinRequests = async (): Promise<ForgotCheckinRequest[]> => {
+  const data = await fetchAPI('/forgot_checkin_requests/pending');
+  return data.map((r: any) => ({
+    id: r.id.toString(),
+    userId: r.user_id.toString(),
+    userName: r.user_name,
+    requestDate: r.request_date,
+    requestType: r.request_type,
+    requestTime: r.request_time,
+    reason: r.reason,
+    status: r.status,
+    approvedById: r.approved_by_id?.toString(),
+    approvedByName: r.approved_by_name,
+    approvedAt: r.approved_at,
+    rejectedReason: r.rejected_reason,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at
+  }));
+};
+
+export const createForgotCheckinRequest = async (request: {
+  requestDate: string;
+  requestType: 'checkin' | 'checkout';
+  requestTime: string;
+  reason: string;
+}): Promise<ForgotCheckinRequest> => {
+  const data = await fetchAPI('/forgot_checkin_requests', {
+    method: 'POST',
+    body: JSON.stringify({
+      forgot_checkin_request: {
+        request_date: request.requestDate,
+        request_type: request.requestType,
+        request_time: request.requestTime,
+        reason: request.reason
+      }
+    })
+  });
+  return {
+    id: data.id.toString(),
+    userId: data.user_id.toString(),
+    userName: data.user_name,
+    requestDate: data.request_date,
+    requestType: data.request_type,
+    requestTime: data.request_time,
+    reason: data.reason,
+    status: data.status,
+    approvedById: data.approved_by_id?.toString(),
+    approvedByName: data.approved_by_name,
+    approvedAt: data.approved_at,
+    rejectedReason: data.rejected_reason,
+    createdAt: data.created_at,
+    updatedAt: data.updated_at
+  };
+};
+
+export const approveForgotCheckinRequest = async (id: string): Promise<{ message: string; request: ForgotCheckinRequest }> => {
+  const data = await fetchAPI(`/forgot_checkin_requests/${id}/approve`, {
+    method: 'POST'
+  });
+  return {
+    message: data.message,
+    request: {
+      id: data.request.id.toString(),
+      userId: data.request.user_id.toString(),
+      userName: data.request.user_name,
+      requestDate: data.request.request_date,
+      requestType: data.request.request_type,
+      reason: data.request.reason,
+      status: data.request.status,
+      approvedById: data.request.approved_by_id?.toString(),
+      approvedByName: data.request.approved_by_name,
+      approvedAt: data.request.approved_at,
+      rejectedReason: data.request.rejected_reason,
+      createdAt: data.request.created_at,
+      updatedAt: data.request.updated_at
+    }
+  };
+};
+
+export const rejectForgotCheckinRequest = async (id: string, rejectedReason?: string): Promise<{ message: string; request: ForgotCheckinRequest }> => {
+  const data = await fetchAPI(`/forgot_checkin_requests/${id}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({
+      rejected_reason: rejectedReason
+    })
+  });
+  return {
+    message: data.message,
+    request: {
+      id: data.request.id.toString(),
+      userId: data.request.user_id.toString(),
+      userName: data.request.user_name,
+      requestDate: data.request.request_date,
+      requestType: data.request.request_type,
+      reason: data.request.reason,
+      status: data.request.status,
+      approvedById: data.request.approved_by_id?.toString(),
+      approvedByName: data.request.approved_by_name,
+      approvedAt: data.request.approved_at,
+      rejectedReason: data.request.rejected_reason,
+      createdAt: data.request.created_at,
+      updatedAt: data.request.updated_at
+    }
+  };
 };

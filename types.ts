@@ -142,3 +142,30 @@ export interface WorkShift {
   departmentName?: string;
   createdAt?: string;
 }
+
+export interface AppSetting {
+  id?: string;
+  companyName: string;
+  requireIpCheck: boolean;
+  allowedIps: string[];
+  maxUserOffDaysPerWeek?: number;
+  maxUserOffShiftsPerWeek?: number;
+  maxShiftOffCountPerDay?: number;
+}
+
+export interface ForgotCheckinRequest {
+  id: string;
+  userId: string;
+  userName?: string;
+  requestDate: string; // YYYY-MM-DD
+  requestType: 'checkin' | 'checkout';
+  requestTime?: string; // HH:mm format
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected';
+  approvedById?: string;
+  approvedByName?: string;
+  approvedAt?: string;
+  rejectedReason?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}

@@ -15,6 +15,9 @@ import StaffSchedule from './components/StaffSchedule';
 import MySchedule from './components/MySchedule';
 import ProfileSettings from './components/ProfileSettings';
 import { AppSettings } from './components/AppSettings';
+import { Settings } from './components/Settings';
+import { ForgotCheckinRequestForm } from './components/ForgotCheckinRequestForm';
+import { AdminForgotCheckinRequests } from './components/AdminForgotCheckinRequests';
 import { User } from './types';
 import * as api from './services/api';
 
@@ -92,6 +95,9 @@ const App: React.FC = () => {
       {view === 'my-schedule' && <MySchedule user={user} />}
       {view === 'staff-management' && <StaffManagement />}
       {view === 'app-settings' && <AppSettings />}
+      {view === 'settings' && <Settings user={user} />}
+      {view === 'forgot-checkin-request' && <ForgotCheckinRequestForm user={user} />}
+      {view === 'admin-forgot-checkin-requests' && <AdminForgotCheckinRequests user={user} />}
       
       {showProfileSettings && (
         <ProfileSettings
