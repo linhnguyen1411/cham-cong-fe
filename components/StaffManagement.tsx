@@ -16,8 +16,8 @@ export const StaffManagement: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterBranch, setFilterBranch] = useState<string>('all');
   const [filterDepartment, setFilterDepartment] = useState<string>('all');
-  const [filterRole, setFilterRole] = useState<string>('all');
-  const [filterStatus, setFilterStatus] = useState<string>('active'); // 'active', 'deactive', 'all'
+  const [filterRole, setFilterRole] = useState<string>('all'); // 'all', 'admin', 'staff'
+  const [filterStatus, setFilterStatus] = useState<string>('all'); // 'active', 'deactive', 'all'
   
   // Detail/Edit modal
   const [selectedStaff, setSelectedStaff] = useState<User | null>(null);
@@ -68,6 +68,15 @@ export const StaffManagement: React.FC = () => {
                        (filterStatus === 'deactive' && s.status === UserStatus.DEACTIVE);
     return matchSearch && matchBranch && matchDepartment && matchRole && matchStatus;
   });
+
+  // Tính toán thống kê
+  const stats = {
+    total: staff.length,
+    admin: staff.filter(s => s.role === UserRole.ADMIN).length,
+    staff: staff.filter(s => s.role === UserRole.STAFF).length,
+    active: staff.filter(s => s.status !== UserStatus.DEACTIVE).length,
+    deactive: staff.filter(s => s.status === UserStatus.DEACTIVE).length
+  };
 
   const handleViewDetail = (user: User) => {
     setSelectedStaff(user);
@@ -163,14 +172,14 @@ export const StaffManagement: React.FC = () => {
     <div className="space-y-6">
       {/* Header */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
           <div>
             <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
               <Users size={24} className="text-blue-600" />
-              Quản lý nhân viên
+              Quản lý tài khoản
             </h2>
             <p className="text-slate-500 text-sm mt-1">
-              {staff.length} nhân viên • {branches.length} chi nhánh • {departments.length} khối
+              Tất cả tài khoản trong hệ thống
             </p>
           </div>
           
@@ -180,7 +189,7 @@ export const StaffManagement: React.FC = () => {
               className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
             >
               <Plus size={18} />
-              Tạo nhân viên mới
+              Tạo tài khoản mới
             </button>
             <button
               onClick={() => setShowBranchModal(true)}
@@ -189,6 +198,30 @@ export const StaffManagement: React.FC = () => {
               <Building2 size={18} />
               Quản lý chi nhánh
             </button>
+          </div>
+        </div>
+        
+        {/* Statistics */}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <div className="bg-blue-50 rounded-lg p-3 border border-blue-100">
+            <div className="text-sm text-blue-600 font-medium">Tổng tài khoản</div>
+            <div className="text-2xl font-bold text-blue-700 mt-1">{stats.total}</div>
+          </div>
+          <div className="bg-purple-50 rounded-lg p-3 border border-purple-100">
+            <div className="text-sm text-purple-600 font-medium">Admin</div>
+            <div className="text-2xl font-bold text-purple-700 mt-1">{stats.admin}</div>
+          </div>
+          <div className="bg-green-50 rounded-lg p-3 border border-green-100">
+            <div className="text-sm text-green-600 font-medium">Nhân viên</div>
+            <div className="text-2xl font-bold text-green-700 mt-1">{stats.staff}</div>
+          </div>
+          <div className="bg-emerald-50 rounded-lg p-3 border border-emerald-100">
+            <div className="text-sm text-emerald-600 font-medium">Đang làm việc</div>
+            <div className="text-2xl font-bold text-emerald-700 mt-1">{stats.active}</div>
+          </div>
+          <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
+            <div className="text-sm text-gray-600 font-medium">Đã nghỉ việc</div>
+            <div className="text-2xl font-bold text-gray-700 mt-1">{stats.deactive}</div>
           </div>
         </div>
       </div>
@@ -247,9 +280,9 @@ export const StaffManagement: React.FC = () => {
               onChange={e => setFilterStatus(e.target.value)}
               className="px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
+              <option value="all">Tất cả trạng thái</option>
               <option value="active">Đang làm việc</option>
               <option value="deactive">Đã nghỉ việc</option>
-              <option value="all">Tất cả</option>
             </select>
           </div>
         </div>
@@ -337,7 +370,7 @@ export const StaffManagement: React.FC = () => {
                           ? 'bg-purple-100 text-purple-700'
                           : 'bg-green-100 text-green-700'
                       }`}>
-                        {user.role === UserRole.ADMIN ? 'Admin' : 'Nhân viên'}
+                        {user.role === UserRole.ADMIN ? '👑 Admin' : '👤 Nhân viên'}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-600">
