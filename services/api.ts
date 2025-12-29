@@ -18,7 +18,7 @@ const getBaseUrl = () => {
   if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
     return '/api'; // Production: use Nginx proxy
   }
-  return (process.env.REACT_APP_API_URL || 'http://127.0.0.1:4000').replace(/\/$/, '');
+  return (process.env.REACT_APP_API_URL || 'http://127.0.0.1:3000').replace(/\/$/, '');
 };
 
 export const BASE_URL = getBaseUrl();
@@ -1002,4 +1002,64 @@ export const updateAppSettings = async (settings: any): Promise<any> => {
     console.error("Update app settings failed:", e);
     throw e;
   }
+};
+
+// --- ADMIN SHIFT REGISTRATION MANAGEMENT ---
+
+export const adminUpdateShiftRegistration = async (
+  id: string,
+  registration: {
+    workShiftId?: string;
+    workDate?: string;
+    note?: string;
+    adminNote?: string;
+    status?: string;
+  }
+): Promise<ShiftRegistration> => {
+  const data = await fetchAPI(`/shift_registrations/${id}/admin_update`, {
+    method: 'POST',
+    body: JSON.stringify({
+      shift_registration: {
+        work_shift_id: registration.workShiftId ? Number(registration.workShiftId) : undefined,
+        work_date: registration.workDate,
+        note: registration.note,
+        admin_note: registration.adminNote,
+        status: registration.status
+      }
+    })
+  });
+  return mapShiftRegistrationFromApi(data);
+};
+
+export const adminBulkUpdateShiftRegistrations = async (
+  updates: Array<{
+    id: string;
+    workShiftId?: string;
+    workDate?: string;
+    note?: string;
+    adminNote?: string;
+  }>
+): Promise<{ updated: string[]; errors: any[] }> => {
+  const data = await fetchAPI('/shift_registrations/admin_bulk_update', {
+    method: 'POST',
+    body: JSON.stringify({
+      updates: updates.map(u => ({
+        id: Number(u.id),
+        work_shift_id: u.workShiftId ? Number(u.workShiftId) : undefined,
+        work_date: u.workDate,
+        note: u.note,
+        admin_note: u.adminNote
+      }))
+    })
+  });
+  return {
+    updated: (data.updated || []).map(String),
+    errors: data.errors || []
+  };
+};
+
+export const adminDeleteShiftRegistration = async (id: string): Promise<void> => {
+  await fetchAPI(`/shift_registrations/${id}`, {
+    method: 'DELETE'
+  });
 };

@@ -6,12 +6,12 @@ export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     return {
       server: {
-        port: 3000,
+        port: 5173,
         host: 'localhost',
         hmr: {
           protocol: 'ws',
           host: 'localhost',
-          port: 3000,
+          port: 5173,
         },
         watch: {
           usePolling: true,

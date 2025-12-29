@@ -557,34 +557,21 @@ const ShiftRegistration: React.FC<Props> = ({ user }) => {
                     let isDisabled = false;
                     let onClickHandler: () => void = () => {};
                     
-                    if (reg) {
-                      if (reg.status === ShiftRegistrationStatus.APPROVED) {
-                        // Đã xác nhận: xanh lá, không thể thay đổi
-                        buttonClass = 'bg-green-600 text-white';
-                        isDisabled = true;
-                      } else if (reg.status === ShiftRegistrationStatus.PENDING) {
-                        // Đang chờ: vàng, có thể toggle (chỉ toggle trong selectedShifts, không gọi API)
-                        buttonClass = isSelected 
-                          ? 'bg-yellow-500 text-white hover:bg-yellow-600'
-                          : 'bg-yellow-400 text-white hover:bg-yellow-500';
-                        onClickHandler = () => {
-                          // Chỉ toggle trong selectedShifts, không gọi API xóa
-                          // Khi submit, backend sẽ xóa tất cả pending và tạo lại từ selectedShifts
-                          handleShiftToggle(dayIdx, shift.id);
-                        };
-                      } else if (reg.status === ShiftRegistrationStatus.REJECTED) {
-                        // Bị từ chối: màu trắng/xám, có thể chọn lại từ đầu
-                        // Không highlight ngay cả khi isSelected (để user phải click lại)
-                        buttonClass = isSelected 
-                          ? 'bg-indigo-600 text-white shadow-md'
-                          : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50';
-                        onClickHandler = () => handleShiftToggle(dayIdx, shift.id);
-                      }
+                    // Logic màu sắc: ưu tiên approved (disabled), sau đó isSelected
+                    // Nếu toggle ra khỏi selectedShifts → trắng (không hiển thị pending)
+                    if (reg && reg.status === ShiftRegistrationStatus.APPROVED) {
+                      // Đã xác nhận: xanh lá, không thể thay đổi (bất kể isSelected)
+                      buttonClass = 'bg-green-600 text-white';
+                      isDisabled = true;
+                    } else if (isSelected) {
+                      // Đã chọn trong selectedShifts: xanh dương (sẽ submit)
+                      // Nếu có pending → vẫn xanh dương (sẽ submit lại)
+                      buttonClass = 'bg-indigo-600 text-white shadow-md hover:bg-indigo-700';
+                      onClickHandler = () => handleShiftToggle(dayIdx, shift.id);
                     } else {
-                      // Chưa đăng ký: trắng, khi chọn -> xanh dương
-                      buttonClass = isSelected 
-                        ? 'bg-indigo-600 text-white shadow-md'
-                        : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50';
+                      // Chưa chọn: trắng (bất kể có pending hay không)
+                      // Nếu có pending nhưng toggle ra → trắng (sẽ bị xóa khi submit)
+                      buttonClass = 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50';
                       onClickHandler = () => handleShiftToggle(dayIdx, shift.id);
                     }
                     
@@ -657,34 +644,21 @@ const ShiftRegistration: React.FC<Props> = ({ user }) => {
                       let isDisabled = false;
                       let onClickHandler: () => void = () => {};
                       
-                      if (reg) {
-                        if (reg.status === ShiftRegistrationStatus.APPROVED) {
-                          // Đã xác nhận: xanh lá, không thể thay đổi
-                          buttonClass = 'bg-green-600 text-white';
-                          isDisabled = true;
-                        } else if (reg.status === ShiftRegistrationStatus.PENDING) {
-                          // Đang chờ: vàng, có thể toggle (chỉ toggle trong selectedShifts, không gọi API)
-                          buttonClass = isSelected 
-                            ? 'bg-yellow-500 text-white hover:bg-yellow-600'
-                            : 'bg-yellow-400 text-white hover:bg-yellow-500';
-                          onClickHandler = () => {
-                            // Chỉ toggle trong selectedShifts, không gọi API xóa
-                            // Khi submit, backend sẽ xóa tất cả pending và tạo lại từ selectedShifts
-                            handleShiftToggle(dayIdx, shift.id);
-                          };
-                        } else if (reg.status === ShiftRegistrationStatus.REJECTED) {
-                          // Bị từ chối: màu trắng/xám, có thể chọn lại từ đầu
-                          // Không highlight ngay cả khi isSelected (để user phải click lại)
-                          buttonClass = isSelected 
-                            ? 'bg-indigo-600 text-white shadow-md'
-                            : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50';
-                          onClickHandler = () => handleShiftToggle(dayIdx, shift.id);
-                        }
+                      // Logic màu sắc: ưu tiên approved (disabled), sau đó isSelected
+                      // Nếu toggle ra khỏi selectedShifts → trắng/xanh nhạt (không hiển thị pending)
+                      if (reg && reg.status === ShiftRegistrationStatus.APPROVED) {
+                        // Đã xác nhận: xanh lá, không thể thay đổi (bất kể isSelected)
+                        buttonClass = 'bg-green-600 text-white';
+                        isDisabled = true;
+                      } else if (isSelected) {
+                        // Đã chọn trong selectedShifts: xanh dương (sẽ submit)
+                        // Nếu có pending → vẫn xanh dương (sẽ submit lại)
+                        buttonClass = 'bg-indigo-600 text-white shadow-md hover:bg-indigo-700';
+                        onClickHandler = () => handleShiftToggle(dayIdx, shift.id);
                       } else {
-                        // Chưa đăng ký: xanh dương, có thể toggle
-                        buttonClass = isSelected 
-                          ? 'bg-indigo-600 text-white shadow-md'
-                          : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200';
+                        // Chưa chọn: xanh nhạt (bất kể có pending hay không)
+                        // Nếu có pending nhưng toggle ra → xanh nhạt (sẽ bị xóa khi submit)
+                        buttonClass = 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200';
                         onClickHandler = () => handleShiftToggle(dayIdx, shift.id);
                       }
                       

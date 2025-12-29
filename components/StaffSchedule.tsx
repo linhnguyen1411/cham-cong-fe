@@ -1,7 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Users, ChevronLeft, ChevronRight, Loader2, X, Phone, GripVertical } from 'lucide-react';
+import { Calendar, Users, ChevronLeft, ChevronRight, Loader2, X, Phone, GripVertical, Edit, Trash2, Save } from 'lucide-react';
 import { User, ShiftRegistration, ShiftRegistrationStatus, Position, UserRole, UserStatus } from '../types';
-import { getShiftRegistrations, getWorkShifts, getUsers, getPositions } from '../services/api';
+import { 
+  getShiftRegistrations, 
+  getWorkShifts, 
+  getUsers, 
+  getPositions,
+  adminUpdateShiftRegistration,
+  adminDeleteShiftRegistration
+} from '../services/api';
 
 interface Props {
   user: User;
@@ -22,10 +29,24 @@ const StaffSchedule: React.FC<Props> = ({ user }) => {
     date: string;
     dateLabel: string;
     shiftName: string;
-    staff: Array<{ name: string; phone?: string }>;
+    shiftId: string;
+    staff: Array<{ 
+      name: string; 
+      phone?: string;
+      userId: string;
+      registrationId: string;
+    }>;
   } | null>(null);
   const [positionOrder, setPositionOrder] = useState<string[]>([]);
   const [draggedPositionId, setDraggedPositionId] = useState<string | null>(null);
+  const [editingRegistration, setEditingRegistration] = useState<{
+    id: string;
+    userId: string;
+    workShiftId: string;
+    workDate: string;
+    note?: string;
+  } | null>(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -144,13 +165,20 @@ const StaffSchedule: React.FC<Props> = ({ user }) => {
     return getRegsForDayAndShift(dateStr, shiftId, positionId).map(r => r.userName || '');
   };
 
-  const getStaffDetailsForDayAndShift = (dateStr: string, shiftId: string, positionId?: string): Array<{ name: string; phone?: string }> => {
+  const getStaffDetailsForDayAndShift = (dateStr: string, shiftId: string, positionId?: string): Array<{ 
+    name: string; 
+    phone?: string;
+    userId: string;
+    registrationId: string;
+  }> => {
     const regs = getRegsForDayAndShift(dateStr, shiftId, positionId);
     return regs.map(reg => {
       const user = allUsers.find(u => u.id === reg.userId);
       return {
         name: reg.userName || user?.fullName || '',
-        phone: user?.phone
+        phone: user?.phone,
+        userId: reg.userId,
+        registrationId: reg.id
       };
     });
   };
@@ -293,8 +321,79 @@ const StaffSchedule: React.FC<Props> = ({ user }) => {
   const handleCellClick = (dateStr: string, dateLabel: string, shiftName: string, shiftId: string, positionId?: string) => {
     const staff = getStaffDetailsForDayAndShift(dateStr, shiftId, positionId);
     if (staff.length > 0) {
-      setModalData({ date: dateStr, dateLabel, shiftName, staff });
+      setModalData({ date: dateStr, dateLabel, shiftName, shiftId, staff });
     }
+  };
+
+  const handleEditRegistration = (registrationId: string, userId: string, workShiftId: string, workDate: string, note?: string) => {
+    setEditingRegistration({
+      id: registrationId,
+      userId,
+      workShiftId,
+      workDate,
+      note: note || ''
+    });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingRegistration) return;
+    
+    setSaving(true);
+    setError('');
+    
+    try {
+      await adminUpdateShiftRegistration(editingRegistration.id, {
+        workShiftId: editingRegistration.workShiftId,
+        workDate: editingRegistration.workDate,
+        note: editingRegistration.note
+      });
+      
+      setEditingRegistration(null);
+      await loadData();
+      
+      // Reload modal data if open
+      if (modalData) {
+        const staff = getStaffDetailsForDayAndShift(modalData.date, modalData.shiftId);
+        if (staff.length > 0) {
+          setModalData({ ...modalData, staff });
+        }
+      }
+    } catch (err: any) {
+      setError(err.message || 'Không thể cập nhật đăng ký');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteRegistration = async (registrationId: string) => {
+    if (!confirm('Bạn chắc chắn muốn xóa đăng ký ca này?')) return;
+    
+    setSaving(true);
+    setError('');
+    
+    try {
+      await adminDeleteShiftRegistration(registrationId);
+      await loadData();
+      
+      // Reload modal data if open
+      if (modalData) {
+        const staff = getStaffDetailsForDayAndShift(modalData.date, modalData.shiftId);
+        if (staff.length > 0) {
+          setModalData({ ...modalData, staff });
+        } else {
+          setModalData(null);
+        }
+      }
+    } catch (err: any) {
+      setError(err.message || 'Không thể xóa đăng ký');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleChangeShift = (newShiftId: string) => {
+    if (!editingRegistration) return;
+    setEditingRegistration({ ...editingRegistration, workShiftId: newShiftId });
   };
 
   const navigateWeek = (direction: 'prev' | 'next') => {
@@ -457,6 +556,7 @@ const StaffSchedule: React.FC<Props> = ({ user }) => {
                                     <button
                                       onClick={() => handleCellClick(dateStr, dateLabel, shift.name, String(shift.id), positionId)}
                                       className="w-full flex flex-col items-center gap-1 hover:bg-blue-50 rounded-lg p-2 transition-colors cursor-pointer"
+                                      title={`Click để xem chi tiết${user.role === UserRole.ADMIN ? ' và chỉnh sửa' : ''}`}
                                     >
                                       <div className="flex items-center gap-1.5">
                                         <Users className="w-4 h-4 text-blue-600" />
@@ -624,7 +724,10 @@ const StaffSchedule: React.FC<Props> = ({ user }) => {
                 <p className="text-sm text-gray-600">{modalData.dateLabel}</p>
               </div>
               <button
-                onClick={() => setModalData(null)}
+                onClick={() => {
+                  setModalData(null);
+                  setEditingRegistration(null);
+                }}
                 className="p-2 hover:bg-white/50 rounded-lg transition-colors"
               >
                 <X className="w-5 h-5 text-gray-600" />
@@ -637,34 +740,146 @@ const StaffSchedule: React.FC<Props> = ({ user }) => {
                 Danh sách nhân viên ({modalData.staff.length}):
               </div>
               <div className="space-y-3">
-                {modalData.staff.map((staff, idx) => (
-                  <div
-                    key={idx}
-                    className="p-3 bg-gray-50 rounded-lg border border-gray-200"
-                  >
-                    <div className="font-medium text-gray-900 mb-1">{staff.name}</div>
-                    {staff.phone ? (
-                      <div className="flex items-center gap-2 text-sm text-gray-600">
-                        <Phone className="w-4 h-4" />
-                        <a
-                          href={`tel:${staff.phone}`}
-                          className="hover:text-blue-600 hover:underline"
-                        >
-                          {staff.phone}
-                        </a>
-                      </div>
-                    ) : (
-                      <div className="text-sm text-gray-400">Chưa có số điện thoại</div>
-                    )}
-                  </div>
-                ))}
+                {modalData.staff.map((staff, idx) => {
+                  const isEditing = editingRegistration?.id === staff.registrationId;
+                  const registration = registrations.find(r => r.id === staff.registrationId);
+                  
+                  return (
+                    <div
+                      key={idx}
+                      className="p-3 bg-gray-50 rounded-lg border border-gray-200"
+                    >
+                      {isEditing ? (
+                        <div className="space-y-3">
+                          <div className="font-medium text-gray-900">{staff.name}</div>
+                          
+                          {/* Edit Shift */}
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                              Ca làm việc
+                            </label>
+                            <select
+                              value={editingRegistration.workShiftId}
+                              onChange={(e) => handleChangeShift(e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            >
+                              {availableShifts.map(shift => (
+                                <option key={shift.id} value={shift.id}>
+                                  {shift.name} ({shift.startTime} - {shift.endTime})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          
+                          {/* Edit Note */}
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                              Ghi chú
+                            </label>
+                            <textarea
+                              value={editingRegistration.note || ''}
+                              onChange={(e) => setEditingRegistration({ ...editingRegistration, note: e.target.value })}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              rows={2}
+                              placeholder="Ghi chú (tùy chọn)"
+                            />
+                          </div>
+                          
+                          {/* Action Buttons */}
+                          <div className="flex gap-2">
+                            <button
+                              onClick={handleSaveEdit}
+                              disabled={saving}
+                              className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            >
+                              {saving ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                  Đang lưu...
+                                </>
+                              ) : (
+                                <>
+                                  <Save className="w-4 h-4" />
+                                  Lưu
+                                </>
+                              )}
+                            </button>
+                            <button
+                              onClick={() => setEditingRegistration(null)}
+                              disabled={saving}
+                              className="px-3 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors text-sm font-medium disabled:opacity-50"
+                            >
+                              Hủy
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <div className="font-medium text-gray-900 mb-1">{staff.name}</div>
+                              {staff.phone ? (
+                                <div className="flex items-center gap-2 text-sm text-gray-600">
+                                  <Phone className="w-4 h-4" />
+                                  <a
+                                    href={`tel:${staff.phone}`}
+                                    className="hover:text-blue-600 hover:underline"
+                                  >
+                                    {staff.phone}
+                                  </a>
+                                </div>
+                              ) : (
+                                <div className="text-sm text-gray-400">Chưa có số điện thoại</div>
+                              )}
+                              {registration?.note && (
+                                <div className="text-xs text-gray-500 mt-1">
+                                  Ghi chú: {registration.note}
+                                </div>
+                              )}
+                            </div>
+                            
+                            {/* Admin Actions */}
+                            {user.role === UserRole.ADMIN && (
+                              <div className="flex gap-1 ml-2">
+                                <button
+                                  onClick={() => handleEditRegistration(
+                                    staff.registrationId,
+                                    staff.userId,
+                                    modalData.shiftId,
+                                    modalData.date,
+                                    registration?.note
+                                  )}
+                                  className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition"
+                                  title="Sửa ca làm việc"
+                                >
+                                  <Edit className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteRegistration(staff.registrationId)}
+                                  disabled={saving}
+                                  className="p-1.5 text-red-600 hover:bg-red-50 rounded transition disabled:opacity-50"
+                                  title="Xóa đăng ký"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
             {/* Footer */}
             <div className="p-4 border-t bg-gray-50">
               <button
-                onClick={() => setModalData(null)}
+                onClick={() => {
+                  setModalData(null);
+                  setEditingRegistration(null);
+                }}
                 className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
               >
                 Đóng
