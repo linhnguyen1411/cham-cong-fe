@@ -182,6 +182,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, currentView, onN
                   <NavItem view="tracker" icon={Clock} label="Chấm công" onClick={closeMobileMenu} />
                   <NavItem view="shift-registration" icon={CalendarPlus} label="Đăng ký ca" onClick={closeMobileMenu} />
                   <NavItem view="my-schedule" icon={Calendar} label="Lịch làm việc" onClick={closeMobileMenu} />
+                  <NavItem view="forgot-checkin-request" icon={ClipboardCheck} label="Quên in/out" onClick={closeMobileMenu} />
                 </>
               )}
               
@@ -198,6 +199,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, currentView, onN
                   <NavItem view="shift-approval" icon={ClipboardCheck} label="Duyệt đăng ký ca" onClick={closeMobileMenu} />
                   <NavItem view="staff-schedule" icon={Calendar} label="Lịch làm việc" onClick={closeMobileMenu} />
                   <NavItem view="staff-management" icon={Users} label="Quản lý nhân viên" onClick={closeMobileMenu} />
+                  <NavItem view="admin-forgot-checkin-requests" icon={ClipboardCheck} label="Duyệt xin quên checkin/out" onClick={closeMobileMenu} />
+                  <NavItem view="settings" icon={Settings} label="Cài đặt IP" onClick={closeMobileMenu} />
                   <NavItem view="app-settings" icon={Settings} label="Cài đặt hệ thống" onClick={closeMobileMenu} />
                 </>
               )}
