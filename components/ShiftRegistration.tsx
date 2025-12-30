@@ -721,7 +721,7 @@ const ShiftRegistration: React.FC<Props> = ({ user }) => {
       {viewingWeek === 'next' && !canRegisterNextWeek && (
         <div className="mt-4 md:mt-6 p-3 md:p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-700 text-sm">
           <AlertCircle className="w-4 h-4 inline mr-2" />
-          Chỉ có thể đăng ký ca cho tuần tới vào <strong>thứ 6</strong> hàng tuần.
+          Chỉ có thể đăng ký ca cho tuần tới vào <strong>thứ 6</strong> và <strong>thứ 7</strong> hàng tuần.
         </div>
       )}
     </div>
