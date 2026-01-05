@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Users, Loader2, Phone, X as XIcon, Plus } from 'lucide-react';
+import { Calendar, Users, Loader2, Phone, X as XIcon, Plus, Printer } from 'lucide-react';
 import { User, ShiftRegistration, Position, UserRole as UserRoleEnum, UserStatus } from '../types';
 import { 
   getShiftRegistrations, 
@@ -282,9 +282,92 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
     );
   }
 
+  const handlePrint = () => {
+    window.print();
+  };
+
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+      <style>{`
+        @media print {
+          @page {
+            margin: 1cm;
+            size: A4 landscape;
+          }
+          body * {
+            visibility: hidden;
+          }
+          .print-container, .print-container * {
+            visibility: visible !important;
+          }
+          .print-container {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            padding: 0;
+          }
+          .no-print {
+            display: none !important;
+            visibility: hidden !important;
+          }
+          .print-header {
+            margin-bottom: 20px;
+            page-break-inside: avoid;
+          }
+          .print-title {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 10px;
+          }
+          .print-week-info {
+            margin-bottom: 20px;
+            font-weight: 600;
+          }
+          .print-container .hidden {
+            display: block !important;
+            visibility: visible !important;
+          }
+          .print-container .lg\\:block {
+            display: block !important;
+            visibility: visible !important;
+          }
+          .print-container table {
+            border-collapse: collapse !important;
+            width: 100% !important;
+            display: table !important;
+            visibility: visible !important;
+          }
+          .print-container thead {
+            display: table-header-group !important;
+            visibility: visible !important;
+          }
+          .print-container tbody {
+            display: table-row-group !important;
+            visibility: visible !important;
+          }
+          .print-container tr {
+            display: table-row !important;
+            visibility: visible !important;
+            page-break-inside: avoid;
+          }
+          .print-container th, .print-container td {
+            border: 1px solid #000 !important;
+            padding: 8px !important;
+            text-align: left !important;
+            display: table-cell !important;
+            visibility: visible !important;
+          }
+          .print-container th {
+            background-color: #f3f4f6 !important;
+            font-weight: bold !important;
+          }
+          .print-container button {
+            display: none !important;
+          }
+        }
+      `}</style>
+      <div className="flex items-center justify-between mb-6 no-print">
         <div className="flex items-center gap-3">
           <div className="p-3 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-xl">
             <Calendar className="w-6 h-6 text-white" />
@@ -296,40 +379,50 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
             </p>
           </div>
         </div>
-        {isAdmin && (
+        <div className="flex items-center gap-2">
           <button
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+            onClick={handlePrint}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition"
           >
-            <Plus size={20} />
-            <span>Thêm ca làm việc</span>
+            <Printer size={20} />
+            <span>In</span>
           </button>
-        )}
+          {isAdmin && (
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+            >
+              <Plus size={20} />
+              <span>Thêm ca làm việc</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {error && error.includes('Vui lòng') && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 rounded-lg text-sm">
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 rounded-lg text-sm no-print">
           {error}
         </div>
       )}
 
-      {/* Week Info */}
-      {selectedWeek && (
-        <div className="mb-4 p-4 bg-white rounded-xl shadow-sm border">
-          <div className="text-center">
-            <div className="font-semibold text-gray-900">
-              Tuần từ {formatDate(weekDates[0])} đến {formatDate(weekDates[6])}
-            </div>
-            <div className="text-sm text-gray-500 mt-1">
-              {weekDates[0].getFullYear()}
+      <div className="print-container">
+        {/* Week Info */}
+        {selectedWeek && (
+          <div className="mb-4 p-4 bg-white rounded-xl shadow-sm border print-header">
+            <div className="text-center">
+              <div className="text-2xl font-bold text-gray-900 print-title">
+                Lịch làm việc tuần này
+              </div>
+              <div className="font-semibold text-gray-900 print-week-info">
+                Tuần từ {formatDate(weekDates[0])} đến {formatDate(weekDates[6])} {weekDates[0].getFullYear()}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Schedule Grid - Desktop */}
-      <div className="hidden lg:block bg-white rounded-xl shadow-sm border overflow-x-auto">
-        <table className="w-full border-collapse min-w-[800px]">
+        {/* Schedule Grid - Desktop */}
+        <div className="hidden lg:block bg-white rounded-xl shadow-sm border overflow-x-auto print-table-wrapper">
+        <table className="w-full border-collapse min-w-[800px] print-table">
           <thead className="bg-gray-50 sticky top-0 z-10">
             <tr>
               <th className="p-3 font-semibold text-gray-700 border-r border-b text-left w-[150px]">Vị trí</th>
@@ -417,10 +510,11 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Mobile View */}
-      <div className="lg:hidden space-y-4">
+      <div className="lg:hidden space-y-4 no-print">
         {getAllPositionsWithNull().map((position) => (
           <div key={position.id} className="bg-white rounded-xl shadow-sm border overflow-hidden">
             <div className="p-3 bg-gradient-to-r from-blue-50 to-cyan-50 border-b">
