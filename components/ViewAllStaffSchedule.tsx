@@ -311,6 +311,12 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
             display: none !important;
             visibility: hidden !important;
           }
+          /* Ensure mobile view is visible on screen (not print) */
+          @media screen {
+            .lg\\:hidden {
+              display: block !important;
+            }
+          }
           .print-header {
             margin-bottom: 20px;
             page-break-inside: avoid;
@@ -324,11 +330,15 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
             margin-bottom: 20px;
             font-weight: 600;
           }
-          .print-container .hidden {
+          .print-container div.hidden {
             display: block !important;
             visibility: visible !important;
           }
-          .print-container .lg\\:block {
+          .print-container div.lg\\:block {
+            display: block !important;
+            visibility: visible !important;
+          }
+          .print-container [class*="hidden"] {
             display: block !important;
             visibility: visible !important;
           }
@@ -514,7 +524,7 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
       </div>
 
       {/* Mobile View */}
-      <div className="lg:hidden space-y-4 no-print">
+      <div className="lg:hidden space-y-4">
         {getAllPositionsWithNull().map((position) => (
           <div key={position.id} className="bg-white rounded-xl shadow-sm border overflow-hidden">
             <div className="p-3 bg-gradient-to-r from-blue-50 to-cyan-50 border-b">
