@@ -13,6 +13,7 @@ import ShiftRegistration from './components/ShiftRegistration';
 import ShiftApproval from './components/ShiftApproval';
 import StaffSchedule from './components/StaffSchedule';
 import MySchedule from './components/MySchedule';
+import ViewAllStaffSchedule from './components/ViewAllStaffSchedule';
 import ProfileSettings from './components/ProfileSettings';
 import { AppSettings } from './components/AppSettings';
 import { Settings } from './components/Settings';
@@ -91,8 +92,9 @@ const App: React.FC = () => {
       {view === 'position-settings' && <PositionSettings />}
       {view === 'shift-settings' && <ShiftSettings />}
       {view === 'shift-approval' && <ShiftApproval user={user} />}
-      {view === 'staff-schedule' && <StaffSchedule user={user} />}
+      {view === 'staff-schedule' && <ViewAllStaffSchedule user={user} />}
       {view === 'my-schedule' && <MySchedule user={user} />}
+      {view === 'view-all-staff-schedule' && <ViewAllStaffSchedule user={user} />}
       {view === 'staff-management' && <StaffManagement />}
       {view === 'app-settings' && <AppSettings />}
       {view === 'settings' && <Settings user={user} />}

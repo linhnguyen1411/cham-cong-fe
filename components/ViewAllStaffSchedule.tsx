@@ -1,0 +1,609 @@
+import React, { useState, useEffect } from 'react';
+import { Calendar, Users, Loader2, Phone, X as XIcon, Plus } from 'lucide-react';
+import { User, ShiftRegistration, Position, UserRole as UserRoleEnum, UserStatus } from '../types';
+import { 
+  getShiftRegistrations, 
+  getWorkShifts, 
+  getUsers, 
+  getPositions,
+  adminQuickAddShiftRegistration,
+  adminQuickDeleteShiftRegistration
+} from '../services/api';
+
+interface Props {
+  user: User;
+}
+
+const WEEKDAYS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+const WEEKDAY_FULL = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ nhật'];
+
+const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
+  const [loading, setLoading] = useState(true);
+  const [registrations, setRegistrations] = useState<ShiftRegistration[]>([]);
+  const [availableShifts, setAvailableShifts] = useState<any[]>([]);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [error, setError] = useState('');
+  const [modalData, setModalData] = useState<{
+    date: string;
+    dateLabel: string;
+    shiftName: string;
+    shiftId: string;
+    positionId?: string;
+    staff: Array<{ 
+      name: string; 
+      phone?: string;
+      userId: string;
+      registrationId: string;
+    }>;
+  } | null>(null);
+  const [selectedWeek, setSelectedWeek] = useState<string>('');
+  const [addingUser, setAddingUser] = useState<string | null>(null);
+  const [deletingUser, setDeletingUser] = useState<string | null>(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addFormData, setAddFormData] = useState({
+    userId: '',
+    shiftId: '',
+    date: ''
+  });
+  const isAdmin = user.role === UserRoleEnum.ADMIN;
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      setError('');
+      
+      // Calculate current week start (Monday)
+      const today = new Date();
+      const dayOfWeek = today.getDay();
+      const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      const currentMonday = new Date(today);
+      currentMonday.setDate(today.getDate() + diff);
+      currentMonday.setHours(0, 0, 0, 0);
+      
+      const weekStart = formatDateForAPI(currentMonday);
+      setSelectedWeek(weekStart);
+      
+      // Load all shifts, users, and positions
+      const [shifts, users, positionsData] = await Promise.all([
+        getWorkShifts(),
+        getUsers(),
+        getPositions()
+      ]);
+      setAvailableShifts(shifts);
+      setAllUsers(users);
+      setPositions(positionsData);
+      
+      // Load approved registrations for current week only
+      const regs = await getShiftRegistrations({
+        weekStart: weekStart,
+        status: 'approved'
+      });
+      setRegistrations(regs);
+    } catch (err: any) {
+      setError(err.message || 'Không thể tải dữ liệu');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatDateForAPI = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const getWeekDates = (weekStart: string): Date[] => {
+    const start = new Date(weekStart);
+    start.setHours(0, 0, 0, 0);
+    const dates: Date[] = [];
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(start);
+      date.setDate(start.getDate() + i);
+      dates.push(date);
+    }
+    return dates;
+  };
+
+  const formatDate = (date: Date) => {
+    return `${date.getDate()}/${date.getMonth() + 1}`;
+  };
+
+  const getRegsForDayAndShift = (dateStr: string, shiftId: string, positionId?: string): ShiftRegistration[] => {
+    let regs = registrations.filter(r => r.workDate === dateStr && r.workShiftId === shiftId);
+    
+    // Filter by position if specified
+    if (positionId) {
+      if (positionId === 'no-position') {
+        regs = regs.filter(reg => {
+          const user = allUsers.find(u => u.id === reg.userId);
+          return !user?.positionId;
+        });
+      } else {
+        regs = regs.filter(reg => {
+          const user = allUsers.find(u => u.id === reg.userId);
+          return user?.positionId === positionId;
+        });
+      }
+    }
+    
+    return regs;
+  };
+
+  const getStaffDetailsForDayAndShift = (dateStr: string, shiftId: string, positionId?: string): Array<{ 
+    name: string; 
+    phone?: string;
+    userId: string;
+    registrationId: string;
+  }> => {
+    const regs = getRegsForDayAndShift(dateStr, shiftId, positionId);
+    return regs.map(reg => {
+      const user = allUsers.find(u => u.id === reg.userId);
+      return {
+        name: reg.userName || user?.fullName || '',
+        phone: user?.phone,
+        userId: reg.userId,
+        registrationId: reg.id
+      };
+    });
+  };
+  
+  const getActiveStaff = (): User[] => {
+    return allUsers.filter(u => 
+      u.role === UserRoleEnum.STAFF && 
+      u.status !== UserStatus.DEACTIVE
+    );
+  };
+
+  const getUsersByPosition = (positionId?: string): User[] => {
+    const activeStaff = getActiveStaff();
+    if (!positionId || positionId === 'no-position') {
+      return activeStaff.filter(u => !u.positionId);
+    }
+    return activeStaff.filter(u => u.positionId === positionId);
+  };
+  
+  const getPositionSortOrder = (positionName: string): number => {
+    const name = positionName.toLowerCase();
+    if (name.includes('phục vụ') || name.includes('phuc vu')) return 1;
+    if (name.includes('bếp') || name.includes('bep')) return 2;
+    if (name === 'chưa phân vị trí' || name === 'chua phan vi tri') return 999;
+    return 10;
+  };
+  
+  const getAllPositionsWithNull = (): Array<Position & { id: string; name: string }> => {
+    const activeStaff = getActiveStaff();
+    const result: Array<Position & { id: string; name: string }> = [...positions];
+    
+    const usersWithoutPosition = activeStaff.filter(u => !u.positionId);
+    if (usersWithoutPosition.length > 0) {
+      result.push({
+        id: 'no-position',
+        name: 'Chưa phân vị trí',
+        description: undefined,
+        branchId: undefined,
+        branchName: undefined,
+        departmentId: undefined,
+        departmentName: undefined,
+        level: 0,
+        usersCount: usersWithoutPosition.length
+      } as Position & { id: string; name: string });
+    }
+    
+    return result.sort((a, b) => {
+      const orderA = getPositionSortOrder(a.name);
+      const orderB = getPositionSortOrder(b.name);
+      if (orderA !== orderB) return orderA - orderB;
+      return a.name.localeCompare(b.name, 'vi');
+    });
+  };
+
+  const handleQuickAdd = async () => {
+    if (!isAdmin || !addFormData.userId || !addFormData.shiftId || !addFormData.date) {
+      setError('Vui lòng chọn đầy đủ thông tin');
+      return;
+    }
+    
+    setAddingUser(`${addFormData.userId}-${addFormData.shiftId}-${addFormData.date}`);
+    setError('');
+    
+    try {
+      await adminQuickAddShiftRegistration({
+        userId: addFormData.userId,
+        workShiftId: addFormData.shiftId,
+        workDate: addFormData.date
+      });
+      setShowAddModal(false);
+      setAddFormData({ userId: '', shiftId: '', date: '' });
+      await loadData();
+    } catch (err: any) {
+      setError(err.message || 'Không thể thêm nhân viên');
+    } finally {
+      setAddingUser(null);
+    }
+  };
+
+  const handleQuickDelete = async (userId: string, shiftId: string, dateStr: string, userName: string, shiftName: string, dateLabel: string) => {
+    if (!isAdmin) return;
+    
+    if (!confirm(`Bạn có chắc chắn muốn xóa ${userName} khỏi ${shiftName} - ${dateLabel}?`)) {
+      return;
+    }
+    
+    setDeletingUser(`${userId}-${shiftId}-${dateStr}`);
+    setError('');
+    
+    try {
+      await adminQuickDeleteShiftRegistration({
+        userId,
+        workShiftId: shiftId,
+        workDate: dateStr
+      });
+      await loadData();
+      
+      // Close modal if the deleted user was shown
+      if (modalData && modalData.staff.some(s => s.userId === userId)) {
+        const updatedStaff = modalData.staff.filter(s => s.userId !== userId);
+        if (updatedStaff.length === 0) {
+          setModalData(null);
+        } else {
+          setModalData({ ...modalData, staff: updatedStaff });
+        }
+      }
+    } catch (err: any) {
+      setError(err.message || 'Không thể xóa nhân viên');
+    } finally {
+      setDeletingUser(null);
+    }
+  };
+
+  const weekDates = selectedWeek ? getWeekDates(selectedWeek) : [];
+  const activeStaff = getActiveStaff();
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
+  if (error && !error.includes('Vui lòng')) {
+    return (
+      <div className="p-4 bg-red-50 border border-red-200 text-red-600 rounded-lg">
+        {error}
+        <button onClick={() => setError('')} className="ml-2 text-red-400 hover:text-red-600">✕</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-4 md:p-6 max-w-7xl mx-auto">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <div className="p-3 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-xl">
+            <Calendar className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Lịch làm việc tuần này</h1>
+            <p className="text-gray-500 text-sm">
+              {isAdmin ? 'Xem và quản lý lịch làm việc của tất cả nhân viên' : 'Xem lịch làm việc của tất cả nhân viên'}
+            </p>
+          </div>
+        </div>
+        {isAdmin && (
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+          >
+            <Plus size={20} />
+            <span>Thêm ca làm việc</span>
+          </button>
+        )}
+      </div>
+
+      {error && error.includes('Vui lòng') && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 rounded-lg text-sm">
+          {error}
+        </div>
+      )}
+
+      {/* Week Info */}
+      {selectedWeek && (
+        <div className="mb-4 p-4 bg-white rounded-xl shadow-sm border">
+          <div className="text-center">
+            <div className="font-semibold text-gray-900">
+              Tuần từ {formatDate(weekDates[0])} đến {formatDate(weekDates[6])}
+            </div>
+            <div className="text-sm text-gray-500 mt-1">
+              {weekDates[0].getFullYear()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Schedule Grid - Desktop */}
+      <div className="hidden lg:block bg-white rounded-xl shadow-sm border overflow-x-auto">
+        <table className="w-full border-collapse min-w-[800px]">
+          <thead className="bg-gray-50 sticky top-0 z-10">
+            <tr>
+              <th className="p-3 font-semibold text-gray-700 border-r border-b text-left w-[150px]">Vị trí</th>
+              {WEEKDAYS.map((day, idx) => {
+                const date = weekDates[idx];
+                const isToday = date && date.toDateString() === new Date().toDateString();
+                return (
+                  <th
+                    key={idx}
+                    className={`p-2 text-center border-r border-b w-[100px] ${isToday ? 'bg-blue-50' : ''}`}
+                  >
+                    <div className={`text-xs font-medium ${isToday ? 'text-blue-600' : 'text-gray-600'}`}>
+                      {day}
+                    </div>
+                    {date && (
+                      <div className={`text-sm font-bold ${isToday ? 'text-blue-600' : 'text-gray-900'}`}>
+                        {date.getDate()}
+                      </div>
+                    )}
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {getAllPositionsWithNull().map((position) => (
+              <tr key={position.id} className="hover:bg-gray-50">
+                <td className="p-3 border-r border-b font-medium text-gray-900">
+                  {position.name}
+                </td>
+                {WEEKDAYS.map((_, dayIdx) => {
+                  const date = weekDates[dayIdx];
+                  const dateStr = date ? formatDateForAPI(date) : '';
+                  return (
+                    <td key={dayIdx} className="p-2 border-r border-b">
+                      <div className="space-y-2">
+                        {availableShifts.map((shift) => {
+                          const staffDetails = getStaffDetailsForDayAndShift(dateStr, shift.id, position.id);
+                          
+                          return (
+                            <div key={shift.id} className="text-xs mb-2">
+                              <div className="font-semibold text-gray-700 mb-1">{shift.name}</div>
+                              <div className="space-y-1">
+                                {staffDetails.map((staff) => (
+                                  <div
+                                    key={staff.userId}
+                                    className="flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100 transition group"
+                                  >
+                                    <span
+                                      className="flex-1 cursor-pointer"
+                                      onClick={() => {
+                                        setModalData({
+                                          date: dateStr,
+                                          dateLabel: `${WEEKDAY_FULL[dayIdx]} ${formatDate(date)}`,
+                                          shiftName: shift.name,
+                                          shiftId: shift.id,
+                                          positionId: position.id,
+                                          staff: staffDetails
+                                        });
+                                      }}
+                                    >
+                                      {staff.name}
+                                    </span>
+                                    {isAdmin && (
+                                      <button
+                                        onClick={() => handleQuickDelete(staff.userId, shift.id, dateStr, staff.name, shift.name, `${WEEKDAY_FULL[dayIdx]} ${formatDate(date)}`)}
+                                        disabled={deletingUser === `${staff.userId}-${shift.id}-${dateStr}`}
+                                        className="opacity-0 group-hover:opacity-100 transition p-0.5 hover:bg-red-200 rounded text-red-600 disabled:opacity-50"
+                                        title="Xóa nhân viên khỏi ca"
+                                      >
+                                        <XIcon size={12} />
+                                      </button>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Mobile View */}
+      <div className="lg:hidden space-y-4">
+        {getAllPositionsWithNull().map((position) => (
+          <div key={position.id} className="bg-white rounded-xl shadow-sm border overflow-hidden">
+            <div className="p-3 bg-gradient-to-r from-blue-50 to-cyan-50 border-b">
+              <div className="font-semibold text-gray-900">{position.name}</div>
+            </div>
+            <div className="p-3 space-y-3">
+              {WEEKDAYS.map((day, dayIdx) => {
+                const date = weekDates[dayIdx];
+                const dateStr = date ? formatDateForAPI(date) : '';
+                return (
+                  <div key={dayIdx} className="border rounded-lg p-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="text-xs font-bold text-gray-900">{day}</div>
+                        <div className="text-sm font-bold text-gray-900">{date ? date.getDate() : ''}</div>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      {availableShifts.map((shift) => {
+                        const staffDetails = getStaffDetailsForDayAndShift(dateStr, shift.id, position.id);
+                        
+                        return (
+                          <div key={shift.id}>
+                            <div className="text-xs font-semibold text-gray-700 mb-1">{shift.name}</div>
+                            <div className="flex flex-wrap gap-1 mb-1">
+                              {staffDetails.map((staff) => (
+                                <div
+                                  key={staff.userId}
+                                  className="relative group px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded"
+                                >
+                                  {staff.name}
+                                  {isAdmin && (
+                                    <button
+                                      onClick={() => handleQuickDelete(staff.userId, shift.id, dateStr, staff.name, shift.name, `${WEEKDAY_FULL[dayIdx]} ${formatDate(date)}`)}
+                                      disabled={deletingUser === `${staff.userId}-${shift.id}-${dateStr}`}
+                                      className="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] disabled:opacity-50"
+                                      title="Xóa"
+                                    >
+                                      <XIcon size={8} />
+                                    </button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Add Modal */}
+      {showAddModal && isAdmin && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => { setShowAddModal(false); setAddFormData({ userId: '', shiftId: '', date: '' }); }}>
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full m-4" onClick={(e) => e.stopPropagation()}>
+            <div className="p-4 border-b flex items-center justify-between">
+              <h3 className="text-lg font-bold text-gray-900">Thêm ca làm việc nhanh</h3>
+              <button
+                onClick={() => { setShowAddModal(false); setAddFormData({ userId: '', shiftId: '', date: '' }); }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XIcon size={20} />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Nhân viên</label>
+                <select
+                  value={addFormData.userId}
+                  onChange={(e) => setAddFormData({ ...addFormData, userId: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">-- Chọn nhân viên --</option>
+                  {activeStaff.map(u => (
+                    <option key={u.id} value={u.id}>{u.fullName}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Ca làm việc</label>
+                <select
+                  value={addFormData.shiftId}
+                  onChange={(e) => setAddFormData({ ...addFormData, shiftId: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">-- Chọn ca --</option>
+                  {availableShifts.map(s => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Ngày</label>
+                <select
+                  value={addFormData.date}
+                  onChange={(e) => setAddFormData({ ...addFormData, date: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">-- Chọn ngày --</option>
+                  {weekDates.map((date, idx) => (
+                    <option key={idx} value={formatDateForAPI(date)}>
+                      {WEEKDAY_FULL[idx]} {formatDate(date)}/{date.getMonth() + 1}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => { setShowAddModal(false); setAddFormData({ userId: '', shiftId: '', date: '' }); }}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition"
+                >
+                  Hủy
+                </button>
+                <button
+                  onClick={handleQuickAdd}
+                  disabled={!addFormData.userId || !addFormData.shiftId || !addFormData.date || addingUser !== null}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                >
+                  {addingUser ? 'Đang thêm...' : 'Thêm'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal for Staff Details */}
+      {modalData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setModalData(null)}>
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full m-4" onClick={(e) => e.stopPropagation()}>
+            <div className="p-4 border-b flex items-center justify-between">
+              <h3 className="text-lg font-bold text-gray-900">
+                {modalData.shiftName} - {modalData.dateLabel}
+              </h3>
+              <button
+                onClick={() => setModalData(null)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-4 max-h-96 overflow-y-auto">
+              <div className="space-y-2">
+                {modalData.staff.map((staff) => (
+                  <div key={staff.userId} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <Users className="w-4 h-4 text-gray-400" />
+                      <span className="font-medium text-gray-900">{staff.name}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {staff.phone && (
+                        <div className="flex items-center gap-1 text-sm text-gray-500">
+                          <Phone className="w-3 h-3" />
+                          {staff.phone}
+                        </div>
+                      )}
+                      {isAdmin && (
+                        <button
+                          onClick={() => {
+                            handleQuickDelete(staff.userId, modalData.shiftId, modalData.date, staff.name, modalData.shiftName, modalData.dateLabel);
+                          }}
+                          disabled={deletingUser === `${staff.userId}-${modalData.shiftId}-${modalData.date}`}
+                          className="p-1 hover:bg-red-100 rounded text-red-600 disabled:opacity-50"
+                          title="Xóa nhân viên khỏi ca"
+                        >
+                          <XIcon size={16} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default ViewAllStaffSchedule;

@@ -1088,6 +1088,37 @@ export const adminDeleteShiftRegistration = async (id: string): Promise<void> =>
   });
 };
 
+export const adminQuickAddShiftRegistration = async (data: {
+  userId: string;
+  workShiftId: string;
+  workDate: string;
+}): Promise<ShiftRegistration> => {
+  const result = await fetchAPI('/shift_registrations/admin_quick_add', {
+    method: 'POST',
+    body: JSON.stringify({
+      user_id: Number(data.userId),
+      work_shift_id: Number(data.workShiftId),
+      work_date: data.workDate
+    })
+  });
+  return mapShiftRegistrationFromApi(result);
+};
+
+export const adminQuickDeleteShiftRegistration = async (data: {
+  userId: string;
+  workShiftId: string;
+  workDate: string;
+}): Promise<{ message: string; deleted_count: number }> => {
+  return await fetchAPI('/shift_registrations/admin_quick_delete', {
+    method: 'POST',
+    body: JSON.stringify({
+      user_id: Number(data.userId),
+      work_shift_id: Number(data.workShiftId),
+      work_date: data.workDate
+    })
+  });
+};
+
 // --- SETTINGS ---
 
 export const getSettings = async (): Promise<AppSetting> => {

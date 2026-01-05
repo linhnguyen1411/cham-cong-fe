@@ -3,7 +3,7 @@ import { User, UserRole } from '../types';
 import { 
   LayoutDashboard, Clock, History, LogOut, User as UserIcon, Settings, 
   UserCog, Users, Building2, Briefcase, CalendarPlus, ClipboardCheck,
-  Menu, X, ChevronRight, Calendar
+  Menu, X, ChevronRight, Calendar, Eye
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -55,6 +55,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, currentView, onN
             <NavItem view="tracker" icon={Clock} label="Chấm công" />
               <NavItem view="shift-registration" icon={CalendarPlus} label="Đăng ký ca" />
               <NavItem view="my-schedule" icon={Calendar} label="Lịch làm việc" />
+              <NavItem view="view-all-staff-schedule" icon={Eye} label="Xem lịch tuần này" />
               <NavItem view="forgot-checkin-request" icon={ClipboardCheck} label="Quên in/out" />
             </>
           )}
@@ -182,6 +183,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, currentView, onN
                   <NavItem view="tracker" icon={Clock} label="Chấm công" onClick={closeMobileMenu} />
                   <NavItem view="shift-registration" icon={CalendarPlus} label="Đăng ký ca" onClick={closeMobileMenu} />
                   <NavItem view="my-schedule" icon={Calendar} label="Lịch làm việc" onClick={closeMobileMenu} />
+                  <NavItem view="view-all-staff-schedule" icon={Eye} label="Xem lịch tuần này" onClick={closeMobileMenu} />
                   <NavItem view="forgot-checkin-request" icon={ClipboardCheck} label="Quên in/out" onClick={closeMobileMenu} />
                 </>
               )}
