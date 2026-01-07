@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Users, Loader2, Phone, X as XIcon, Plus, Printer } from 'lucide-react';
+import { Calendar, Users, Loader2, Phone, X as XIcon, Plus, Printer, ChevronLeft, ChevronRight } from 'lucide-react';
 import { User, ShiftRegistration, Position, UserRole as UserRoleEnum, UserStatus } from '../types';
 import { 
   getShiftRegistrations, 
@@ -49,38 +49,45 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
   const isAdmin = user.role === UserRoleEnum.ADMIN;
 
   useEffect(() => {
-    loadData();
+    // Initialize with current week
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const currentMonday = new Date(today);
+    currentMonday.setDate(today.getDate() + diff);
+    currentMonday.setHours(0, 0, 0, 0);
+    const weekStart = formatDateForAPI(currentMonday);
+    setSelectedWeek(weekStart);
   }, []);
 
+  useEffect(() => {
+    if (selectedWeek) {
+      loadData();
+    }
+  }, [selectedWeek]);
+
   const loadData = async () => {
+    if (!selectedWeek) return;
+    
     try {
       setLoading(true);
       setError('');
       
-      // Calculate current week start (Monday)
-      const today = new Date();
-      const dayOfWeek = today.getDay();
-      const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-      const currentMonday = new Date(today);
-      currentMonday.setDate(today.getDate() + diff);
-      currentMonday.setHours(0, 0, 0, 0);
+      // Load all shifts, users, and positions (only once)
+      if (availableShifts.length === 0 || allUsers.length === 0) {
+        const [shifts, users, positionsData] = await Promise.all([
+          getWorkShifts(),
+          getUsers(),
+          getPositions()
+        ]);
+        setAvailableShifts(shifts);
+        setAllUsers(users);
+        setPositions(positionsData);
+      }
       
-      const weekStart = formatDateForAPI(currentMonday);
-      setSelectedWeek(weekStart);
-      
-      // Load all shifts, users, and positions
-      const [shifts, users, positionsData] = await Promise.all([
-        getWorkShifts(),
-        getUsers(),
-        getPositions()
-      ]);
-      setAvailableShifts(shifts);
-      setAllUsers(users);
-      setPositions(positionsData);
-      
-      // Load approved registrations for current week only
+      // Load approved registrations for selected week
       const regs = await getShiftRegistrations({
-        weekStart: weekStart,
+        weekStart: selectedWeek,
         status: 'approved'
       });
       setRegistrations(regs);
@@ -89,6 +96,32 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const navigateWeek = (direction: 'prev' | 'next') => {
+    if (!selectedWeek) return;
+    
+    const currentWeekStart = new Date(selectedWeek);
+    currentWeekStart.setHours(0, 0, 0, 0);
+    
+    const newWeekStart = new Date(currentWeekStart);
+    if (direction === 'prev') {
+      newWeekStart.setDate(currentWeekStart.getDate() - 7);
+    } else {
+      newWeekStart.setDate(currentWeekStart.getDate() + 7);
+    }
+    
+    setSelectedWeek(formatDateForAPI(newWeekStart));
+  };
+
+  const goToCurrentWeek = () => {
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const currentMonday = new Date(today);
+    currentMonday.setDate(today.getDate() + diff);
+    currentMonday.setHours(0, 0, 0, 0);
+    setSelectedWeek(formatDateForAPI(currentMonday));
   };
 
   const formatDateForAPI = (date: Date): string => {
@@ -375,6 +408,17 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
           .print-container button {
             display: none !important;
           }
+          .print-only {
+            display: none;
+          }
+          @media print {
+            .print-only {
+              display: block !important;
+            }
+            .no-print {
+              display: none !important;
+            }
+          }
         }
       `}</style>
       <div className="flex items-center justify-between mb-6 no-print">
@@ -416,12 +460,43 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
       )}
 
       <div className="print-container">
-        {/* Week Info */}
+        {/* Week Info with Navigation */}
         {selectedWeek && (
           <div className="mb-4 p-4 bg-white rounded-xl shadow-sm border print-header">
-            <div className="text-center">
+            <div className="flex items-center justify-between mb-2 no-print">
+              <button
+                onClick={() => navigateWeek('prev')}
+                className="p-2 hover:bg-gray-100 rounded-lg transition"
+                title="Tuần trước"
+              >
+                <ChevronLeft size={24} className="text-gray-600" />
+              </button>
+              <div className="text-center flex-1">
+                <div className="text-2xl font-bold text-gray-900 print-title">
+                  Lịch làm việc
+                </div>
+                <div className="font-semibold text-gray-900 print-week-info">
+                  Tuần từ {formatDate(weekDates[0])} đến {formatDate(weekDates[6])} {weekDates[0].getFullYear()}
+                </div>
+                <button
+                  onClick={goToCurrentWeek}
+                  className="mt-2 text-xs text-blue-600 hover:text-blue-700 underline"
+                >
+                  Về tuần hiện tại
+                </button>
+              </div>
+              <button
+                onClick={() => navigateWeek('next')}
+                className="p-2 hover:bg-gray-100 rounded-lg transition"
+                title="Tuần sau"
+              >
+                <ChevronRight size={24} className="text-gray-600" />
+              </button>
+            </div>
+            {/* Print-only version (no buttons) */}
+            <div className="text-center print-only">
               <div className="text-2xl font-bold text-gray-900 print-title">
-                Lịch làm việc tuần này
+                Lịch làm việc
               </div>
               <div className="font-semibold text-gray-900 print-week-info">
                 Tuần từ {formatDate(weekDates[0])} đến {formatDate(weekDates[6])} {weekDates[0].getFullYear()}
