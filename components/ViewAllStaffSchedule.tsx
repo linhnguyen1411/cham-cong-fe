@@ -480,7 +480,7 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
                 </div>
                 <button
                   onClick={goToCurrentWeek}
-                  className="mt-2 text-xs text-blue-600 hover:text-blue-700 underline"
+                  className="mt-2 text-xs text-blue-600 hover:text-blue-700 underline no-print"
                 >
                   Về tuần hiện tại
                 </button>
@@ -492,15 +492,6 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
               >
                 <ChevronRight size={24} className="text-gray-600" />
               </button>
-            </div>
-            {/* Print-only version (no buttons) */}
-            <div className="text-center print-only">
-              <div className="text-2xl font-bold text-gray-900 print-title">
-                Lịch làm việc
-              </div>
-              <div className="font-semibold text-gray-900 print-week-info">
-                Tuần từ {formatDate(weekDates[0])} đến {formatDate(weekDates[6])} {weekDates[0].getFullYear()}
-              </div>
             </div>
           </div>
         )}
