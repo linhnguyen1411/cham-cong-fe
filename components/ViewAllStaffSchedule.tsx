@@ -80,7 +80,13 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
           getUsers(),
           getPositions()
         ]);
-        setAvailableShifts(shifts);
+        // Sort shifts by startTime to ensure consistent order (morning first, then afternoon)
+        const sortedShifts = [...shifts].sort((a, b) => {
+          const timeA = a.startTime || '00:00';
+          const timeB = b.startTime || '00:00';
+          return timeA.localeCompare(timeB);
+        });
+        setAvailableShifts(sortedShifts);
         setAllUsers(users);
         setPositions(positionsData);
       }
@@ -536,41 +542,45 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
                           const staffDetails = getStaffDetailsForDayAndShift(dateStr, shift.id, position.id);
                           
                           return (
-                            <div key={shift.id} className="text-xs mb-2">
+                            <div key={shift.id} className="text-xs mb-2 min-h-[40px]">
                               <div className="font-semibold text-gray-700 mb-1">{shift.name}</div>
-                              <div className="space-y-1">
-                                {staffDetails.map((staff) => (
-                                  <div
-                                    key={staff.userId}
-                                    className="flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100 transition group"
-                                  >
-                                    <span
-                                      className="flex-1 cursor-pointer"
-                                      onClick={() => {
-                                        setModalData({
-                                          date: dateStr,
-                                          dateLabel: `${WEEKDAY_FULL[dayIdx]} ${formatDate(date)}`,
-                                          shiftName: shift.name,
-                                          shiftId: shift.id,
-                                          positionId: position.id,
-                                          staff: staffDetails
-                                        });
-                                      }}
+                              <div className="space-y-1 min-h-[20px]">
+                                {staffDetails.length > 0 ? (
+                                  staffDetails.map((staff) => (
+                                    <div
+                                      key={staff.userId}
+                                      className="flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100 transition group"
                                     >
-                                      {staff.name}
-                                    </span>
-                                    {isAdmin && (
-                                      <button
-                                        onClick={() => handleQuickDelete(staff.userId, shift.id, dateStr, staff.name, shift.name, `${WEEKDAY_FULL[dayIdx]} ${formatDate(date)}`)}
-                                        disabled={deletingUser === `${staff.userId}-${shift.id}-${dateStr}`}
-                                        className="opacity-0 group-hover:opacity-100 transition p-0.5 hover:bg-red-200 rounded text-red-600 disabled:opacity-50"
-                                        title="Xóa nhân viên khỏi ca"
+                                      <span
+                                        className="flex-1 cursor-pointer"
+                                        onClick={() => {
+                                          setModalData({
+                                            date: dateStr,
+                                            dateLabel: `${WEEKDAY_FULL[dayIdx]} ${formatDate(date)}`,
+                                            shiftName: shift.name,
+                                            shiftId: shift.id,
+                                            positionId: position.id,
+                                            staff: staffDetails
+                                          });
+                                        }}
                                       >
-                                        <XIcon size={12} />
-                                      </button>
-                                    )}
-                                  </div>
-                                ))}
+                                        {staff.name}
+                                      </span>
+                                      {isAdmin && (
+                                        <button
+                                          onClick={() => handleQuickDelete(staff.userId, shift.id, dateStr, staff.name, shift.name, `${WEEKDAY_FULL[dayIdx]} ${formatDate(date)}`)}
+                                          disabled={deletingUser === `${staff.userId}-${shift.id}-${dateStr}`}
+                                          className="opacity-0 group-hover:opacity-100 transition p-0.5 hover:bg-red-200 rounded text-red-600 disabled:opacity-50"
+                                          title="Xóa nhân viên khỏi ca"
+                                        >
+                                          <XIcon size={12} />
+                                        </button>
+                                      )}
+                                    </div>
+                                  ))
+                                ) : (
+                                  <div className="h-5"></div> // Empty space to maintain position
+                                )}
                               </div>
                             </div>
                           );
@@ -610,27 +620,31 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
                         const staffDetails = getStaffDetailsForDayAndShift(dateStr, shift.id, position.id);
                         
                         return (
-                          <div key={shift.id}>
+                          <div key={shift.id} className="min-h-[30px]">
                             <div className="text-xs font-semibold text-gray-700 mb-1">{shift.name}</div>
-                            <div className="flex flex-wrap gap-1 mb-1">
-                              {staffDetails.map((staff) => (
-                                <div
-                                  key={staff.userId}
-                                  className="relative group px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded"
-                                >
-                                  {staff.name}
-                                  {isAdmin && (
-                                    <button
-                                      onClick={() => handleQuickDelete(staff.userId, shift.id, dateStr, staff.name, shift.name, `${WEEKDAY_FULL[dayIdx]} ${formatDate(date)}`)}
-                                      disabled={deletingUser === `${staff.userId}-${shift.id}-${dateStr}`}
-                                      className="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] disabled:opacity-50"
-                                      title="Xóa"
-                                    >
-                                      <XIcon size={8} />
-                                    </button>
-                                  )}
-                                </div>
-                              ))}
+                            <div className="flex flex-wrap gap-1 mb-1 min-h-[20px]">
+                              {staffDetails.length > 0 ? (
+                                staffDetails.map((staff) => (
+                                  <div
+                                    key={staff.userId}
+                                    className="relative group px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded"
+                                  >
+                                    {staff.name}
+                                    {isAdmin && (
+                                      <button
+                                        onClick={() => handleQuickDelete(staff.userId, shift.id, dateStr, staff.name, shift.name, `${WEEKDAY_FULL[dayIdx]} ${formatDate(date)}`)}
+                                        disabled={deletingUser === `${staff.userId}-${shift.id}-${dateStr}`}
+                                        className="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] disabled:opacity-50"
+                                        title="Xóa"
+                                      >
+                                        <XIcon size={8} />
+                                      </button>
+                                    )}
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="h-5"></div> // Empty space to maintain position
+                              )}
                             </div>
                           </div>
                         );
