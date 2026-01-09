@@ -537,14 +537,14 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
                   const dateStr = date ? formatDateForAPI(date) : '';
                   return (
                     <td key={dayIdx} className="p-2 border-r border-b align-top">
-                      <div className="flex flex-col gap-3">
+                      <div className="space-y-3">
                         {availableShifts.map((shift) => {
                           const staffDetails = getStaffDetailsForDayAndShift(dateStr, shift.id, position.id);
                           
                           return (
-                            <div key={shift.id} className="flex flex-col h-[80px]">
-                              <div className="font-semibold text-gray-700 mb-1.5 text-xs h-5 flex items-center">{shift.name}</div>
-                              <div className="flex-1 space-y-1 overflow-y-auto">
+                            <div key={shift.id}>
+                              <div className="font-semibold text-gray-700 mb-1.5 text-xs">{shift.name}</div>
+                              <div className="space-y-1">
                                 {staffDetails.length > 0 ? (
                                   staffDetails.map((staff) => (
                                     <div
@@ -619,9 +619,9 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
                         const staffDetails = getStaffDetailsForDayAndShift(dateStr, shift.id, position.id);
                         
                         return (
-                          <div key={shift.id} className="min-h-[50px]">
+                          <div key={shift.id}>
                             <div className="text-xs font-semibold text-gray-700 mb-1.5">{shift.name}</div>
-                            <div className="flex flex-wrap gap-1 min-h-[30px]">
+                            <div className="flex flex-wrap gap-1">
                               {staffDetails.length > 0 ? (
                                 staffDetails.map((staff) => (
                                   <div
