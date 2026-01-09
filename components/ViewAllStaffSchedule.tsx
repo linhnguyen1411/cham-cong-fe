@@ -409,7 +409,7 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
             display: none !important;
           }
           .print-only {
-            display: none;
+            display: none !important;
           }
           @media print {
             .print-only {
