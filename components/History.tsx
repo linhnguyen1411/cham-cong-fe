@@ -300,7 +300,7 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
           <p className="text-slate-500 text-sm mt-1">Xem lại hoạt động ra vào của {user.role === UserRole.ADMIN ? 'toàn bộ nhân viên' : 'bạn'}</p>
         </div>
         
-        <div className="flex flex-col md:flex-row items-start md:items-center gap-3">
+        <div className="flex flex-col md:flex-row items-start md:items-end gap-3">
             <div className="relative">
                 <Filter size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" />
                 <select 
@@ -312,7 +312,7 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
                       setDateFrom('');
                       setDateTo('');
                     }}
-                    className="pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    className="pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white h-[42px]"
                 >
                     <option value={FilterType.TODAY}>Hôm nay</option>
                     <option value={FilterType.WEEK}>7 ngày qua</option>
@@ -323,7 +323,7 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
             </div>
             
             {/* Date Range Picker - Separate */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-end gap-2">
               <div>
                 <label className="block text-xs text-gray-600 mb-1">Từ ngày</label>
                 <input
@@ -336,11 +336,11 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
                       setDateTo('');
                     }
                   }}
-                  className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white h-[42px]"
                   placeholder="Chọn ngày bắt đầu"
                 />
               </div>
-              <div className="mt-6">
+              <div className="mb-2">
                 <span className="text-gray-500 text-lg">→</span>
               </div>
               <div>
@@ -351,7 +351,7 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
                   onChange={(e) => setDateTo(e.target.value)}
                   min={dateFrom || undefined}
                   disabled={!dateFrom}
-                  className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
+                  className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white disabled:bg-gray-100 disabled:cursor-not-allowed h-[42px]"
                   placeholder="Chọn ngày kết thúc"
                 />
               </div>
@@ -361,7 +361,7 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
             <button 
               onClick={exportToExcel}
               disabled={loading || filteredSessions.length === 0}
-              className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg border border-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg border border-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors h-[42px] w-[42px] flex items-center justify-center"
               title="Tải xuống bảng lương"
             >
                 <Download size={18} />
