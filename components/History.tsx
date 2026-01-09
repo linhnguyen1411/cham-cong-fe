@@ -16,6 +16,8 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
   const [loading, setLoading] = useState(true);
   const [selectedSession, setSelectedSession] = useState<WorkSession | null>(null);
   const [showDetail, setShowDetail] = useState(false);
+  const [dateFrom, setDateFrom] = useState<string>('');
+  const [dateTo, setDateTo] = useState<string>('');
 
   useEffect(() => {
     loadData();
@@ -53,6 +55,17 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
           const oneMonthAgo = new Date(now);
           oneMonthAgo.setMonth(now.getMonth() - 1);
           return sessionDate >= oneMonthAgo;
+        case FilterType.THIS_MONTH:
+          const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+          monthStart.setHours(0,0,0,0);
+          return sessionDate >= monthStart;
+        case FilterType.DATE_RANGE:
+          if (!dateFrom || !dateTo) return false;
+          const fromDate = new Date(dateFrom);
+          fromDate.setHours(0,0,0,0);
+          const toDate = new Date(dateTo);
+          toDate.setHours(23,59,59,999);
+          return sessionDate >= fromDate && sessionDate <= toDate;
         default:
           return true;
       }
@@ -79,13 +92,14 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
   };
 
   const exportToExcel = async () => {
-    if (filteredSessions.length === 0) {
+    const sessionsToExport = getFilteredSessions();
+    if (sessionsToExport.length === 0) {
       alert('Không có dữ liệu để xuất!');
       return;
     }
 
     // Sort sessions theo nhân viên (tên), sau đó theo thời gian bắt đầu
-    const sortedSessions = [...filteredSessions].sort((a, b) => {
+    const sortedSessions = [...sessionsToExport].sort((a, b) => {
       // So sánh theo tên nhân viên (alphabetically)
       const nameA = (a.userName || 'N/A').toLowerCase();
       const nameB = (b.userName || 'N/A').toLowerCase();
@@ -234,9 +248,18 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
     // Generate filename
     const now = new Date();
     const dateStr = now.toLocaleDateString('vi-VN').replace(/\//g, '-');
-    const filterText = filter === FilterType.TODAY ? 'Hom-nay' :
-                       filter === FilterType.WEEK ? '7-ngay' :
-                       filter === FilterType.MONTH ? '30-ngay' : 'Tat-ca';
+    const getFilterText = () => {
+      if (filter === FilterType.DATE_RANGE && dateFrom && dateTo) {
+        const from = new Date(dateFrom).toLocaleDateString('vi-VN').replace(/\//g, '-');
+        const to = new Date(dateTo).toLocaleDateString('vi-VN').replace(/\//g, '-');
+        return `${from}_${to}`;
+      }
+      return filter === FilterType.TODAY ? 'Hom-nay' :
+             filter === FilterType.WEEK ? '7-ngay' :
+             filter === FilterType.MONTH ? '30-ngay' :
+             filter === FilterType.THIS_MONTH ? 'Thang-nay' : 'Tat-ca';
+    };
+    const filterText = getFilterText();
     const filename = `Lich-su-lam-viec-${filterText}-${dateStr}.xlsx`;
 
     // Export
@@ -258,14 +281,49 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
                 <Filter size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" />
                 <select 
                     value={filter}
-                    onChange={(e) => setFilter(e.target.value as FilterType)}
+                    onChange={(e) => {
+                      const newFilter = e.target.value as FilterType;
+                      setFilter(newFilter);
+                      if (newFilter !== FilterType.DATE_RANGE) {
+                        setDateFrom('');
+                        setDateTo('');
+                      }
+                    }}
                     className="pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                 >
                     <option value={FilterType.TODAY}>Hôm nay</option>
                     <option value={FilterType.WEEK}>7 ngày qua</option>
                     <option value={FilterType.MONTH}>30 ngày qua</option>
+                    <option value={FilterType.THIS_MONTH}>Tháng này</option>
+                    <option value={FilterType.DATE_RANGE}>Chọn khoảng ngày</option>
                     <option value={FilterType.ALL}>Tất cả</option>
                 </select>
+                {filter === FilterType.DATE_RANGE && (
+                  <div className="flex flex-col md:flex-row items-start md:items-center gap-2 mt-2 md:mt-0">
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Từ ngày</label>
+                      <input
+                        type="date"
+                        value={dateFrom}
+                        onChange={(e) => setDateFrom(e.target.value)}
+                        className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                      />
+                    </div>
+                    <div className="mt-6 md:mt-0">
+                      <span className="text-gray-500">→</span>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Đến ngày</label>
+                      <input
+                        type="date"
+                        value={dateTo}
+                        onChange={(e) => setDateTo(e.target.value)}
+                        min={dateFrom}
+                        className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                      />
+                    </div>
+                  </div>
+                )}
             </div>
             {/* Export Button */}
             <button 

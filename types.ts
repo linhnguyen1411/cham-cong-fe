@@ -129,7 +129,9 @@ export enum FilterType {
   ALL = 'ALL',
   TODAY = 'TODAY',
   WEEK = 'WEEK',
-  MONTH = 'MONTH'
+  MONTH = 'MONTH',
+  THIS_MONTH = 'THIS_MONTH',
+  DATE_RANGE = 'DATE_RANGE'
 }
 
 export interface WorkShift {
