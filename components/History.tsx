@@ -40,6 +40,29 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
     // Reset time part for date comparison
     now.setHours(0,0,0,0);
     
+    // Priority: Date range picker > Filter selection
+    // If dateFrom is selected, use date range logic
+    if (dateFrom) {
+      return sessions.filter(session => {
+        const sessionDate = new Date(session.startTime);
+        sessionDate.setHours(0,0,0,0);
+        
+        const fromDate = new Date(dateFrom);
+        fromDate.setHours(0,0,0,0);
+        
+        if (dateTo) {
+          // Both start and end selected: filter by range
+          const toDate = new Date(dateTo);
+          toDate.setHours(23,59,59,999);
+          return sessionDate >= fromDate && sessionDate <= toDate;
+        } else {
+          // Only start selected: from start to now
+          return sessionDate >= fromDate && sessionDate <= now;
+        }
+      });
+    }
+    
+    // No date picker: use filter selection
     return sessions.filter(session => {
       const sessionDate = new Date(session.startTime);
       sessionDate.setHours(0,0,0,0);
@@ -59,13 +82,6 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
           const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
           monthStart.setHours(0,0,0,0);
           return sessionDate >= monthStart;
-        case FilterType.DATE_RANGE:
-          if (!dateFrom || !dateTo) return false;
-          const fromDate = new Date(dateFrom);
-          fromDate.setHours(0,0,0,0);
-          const toDate = new Date(dateTo);
-          toDate.setHours(23,59,59,999);
-          return sessionDate >= fromDate && sessionDate <= toDate;
         default:
           return true;
       }
@@ -249,11 +265,19 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
     const now = new Date();
     const dateStr = now.toLocaleDateString('vi-VN').replace(/\//g, '-');
     const getFilterText = () => {
-      if (filter === FilterType.DATE_RANGE && dateFrom && dateTo) {
-        const from = new Date(dateFrom).toLocaleDateString('vi-VN').replace(/\//g, '-');
-        const to = new Date(dateTo).toLocaleDateString('vi-VN').replace(/\//g, '-');
-        return `${from}_${to}`;
+      // Priority: Date range picker
+      if (dateFrom) {
+        if (dateTo) {
+          const from = new Date(dateFrom).toLocaleDateString('vi-VN').replace(/\//g, '-');
+          const to = new Date(dateTo).toLocaleDateString('vi-VN').replace(/\//g, '-');
+          return `${from}_${to}`;
+        } else {
+          const from = new Date(dateFrom).toLocaleDateString('vi-VN').replace(/\//g, '-');
+          const to = new Date().toLocaleDateString('vi-VN').replace(/\//g, '-');
+          return `${from}_${to}`;
+        }
       }
+      // Use filter selection
       return filter === FilterType.TODAY ? 'Hom-nay' :
              filter === FilterType.WEEK ? '7-ngay' :
              filter === FilterType.MONTH ? '30-ngay' :
@@ -276,7 +300,7 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
           <p className="text-slate-500 text-sm mt-1">Xem lại hoạt động ra vào của {user.role === UserRole.ADMIN ? 'toàn bộ nhân viên' : 'bạn'}</p>
         </div>
         
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col md:flex-row items-start md:items-center gap-3">
             <div className="relative">
                 <Filter size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" />
                 <select 
@@ -284,10 +308,9 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
                     onChange={(e) => {
                       const newFilter = e.target.value as FilterType;
                       setFilter(newFilter);
-                      if (newFilter !== FilterType.DATE_RANGE) {
-                        setDateFrom('');
-                        setDateTo('');
-                      }
+                      // Clear date pickers when changing filter
+                      setDateFrom('');
+                      setDateTo('');
                     }}
                     className="pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                 >
@@ -295,36 +318,45 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
                     <option value={FilterType.WEEK}>7 ngày qua</option>
                     <option value={FilterType.MONTH}>30 ngày qua</option>
                     <option value={FilterType.THIS_MONTH}>Tháng này</option>
-                    <option value={FilterType.DATE_RANGE}>Chọn khoảng ngày</option>
                     <option value={FilterType.ALL}>Tất cả</option>
                 </select>
-                {filter === FilterType.DATE_RANGE && (
-                  <div className="flex flex-col md:flex-row items-start md:items-center gap-2 mt-2 md:mt-0">
-                    <div>
-                      <label className="block text-xs text-gray-600 mb-1">Từ ngày</label>
-                      <input
-                        type="date"
-                        value={dateFrom}
-                        onChange={(e) => setDateFrom(e.target.value)}
-                        className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                      />
-                    </div>
-                    <div className="mt-6 md:mt-0">
-                      <span className="text-gray-500">→</span>
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-600 mb-1">Đến ngày</label>
-                      <input
-                        type="date"
-                        value={dateTo}
-                        onChange={(e) => setDateTo(e.target.value)}
-                        min={dateFrom}
-                        className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                      />
-                    </div>
-                  </div>
-                )}
             </div>
+            
+            {/* Date Range Picker - Separate */}
+            <div className="flex items-center gap-2">
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Từ ngày</label>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => {
+                    setDateFrom(e.target.value);
+                    // Clear end date if start date is cleared
+                    if (!e.target.value) {
+                      setDateTo('');
+                    }
+                  }}
+                  className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  placeholder="Chọn ngày bắt đầu"
+                />
+              </div>
+              <div className="mt-6">
+                <span className="text-gray-500 text-lg">→</span>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Đến ngày</label>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  min={dateFrom || undefined}
+                  disabled={!dateFrom}
+                  className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
+                  placeholder="Chọn ngày kết thúc"
+                />
+              </div>
+            </div>
+            
             {/* Export Button */}
             <button 
               onClick={exportToExcel}
