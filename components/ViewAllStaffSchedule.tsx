@@ -427,7 +427,7 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
             <Calendar className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Lịch làm việc tuần này</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Lịch làm việc</h1>
             <p className="text-gray-500 text-sm">
               {isAdmin ? 'Xem và quản lý lịch làm việc của tất cả nhân viên' : 'Xem lịch làm việc của tất cả nhân viên'}
             </p>
@@ -472,9 +472,6 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
                 <ChevronLeft size={24} className="text-gray-600" />
               </button>
               <div className="text-center flex-1">
-                <div className="text-2xl font-bold text-gray-900 print-title">
-                  Lịch làm việc
-                </div>
                 <div className="font-semibold text-gray-900 print-week-info">
                   Tuần từ {formatDate(weekDates[0])} đến {formatDate(weekDates[6])} {weekDates[0].getFullYear()}
                 </div>
