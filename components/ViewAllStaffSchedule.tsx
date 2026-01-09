@@ -536,23 +536,23 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
                   const date = weekDates[dayIdx];
                   const dateStr = date ? formatDateForAPI(date) : '';
                   return (
-                    <td key={dayIdx} className="p-2 border-r border-b">
-                      <div className="space-y-2">
+                    <td key={dayIdx} className="p-2 border-r border-b align-top">
+                      <div className="space-y-3">
                         {availableShifts.map((shift) => {
                           const staffDetails = getStaffDetailsForDayAndShift(dateStr, shift.id, position.id);
                           
                           return (
-                            <div key={shift.id} className="text-xs mb-2 min-h-[40px]">
-                              <div className="font-semibold text-gray-700 mb-1">{shift.name}</div>
-                              <div className="space-y-1 min-h-[20px]">
+                            <div key={shift.id} className="min-h-[60px]">
+                              <div className="font-semibold text-gray-700 mb-1.5 text-xs">{shift.name}</div>
+                              <div className="space-y-1 min-h-[35px]">
                                 {staffDetails.length > 0 ? (
                                   staffDetails.map((staff) => (
                                     <div
                                       key={staff.userId}
-                                      className="flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100 transition group"
+                                      className="flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100 transition group text-xs"
                                     >
                                       <span
-                                        className="flex-1 cursor-pointer"
+                                        className="flex-1 cursor-pointer truncate"
                                         onClick={() => {
                                           setModalData({
                                             date: dateStr,
@@ -563,6 +563,7 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
                                             staff: staffDetails
                                           });
                                         }}
+                                        title={staff.name}
                                       >
                                         {staff.name}
                                       </span>
@@ -570,7 +571,7 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
                                         <button
                                           onClick={() => handleQuickDelete(staff.userId, shift.id, dateStr, staff.name, shift.name, `${WEEKDAY_FULL[dayIdx]} ${formatDate(date)}`)}
                                           disabled={deletingUser === `${staff.userId}-${shift.id}-${dateStr}`}
-                                          className="opacity-0 group-hover:opacity-100 transition p-0.5 hover:bg-red-200 rounded text-red-600 disabled:opacity-50"
+                                          className="opacity-0 group-hover:opacity-100 transition p-0.5 hover:bg-red-200 rounded text-red-600 disabled:opacity-50 flex-shrink-0"
                                           title="Xóa nhân viên khỏi ca"
                                         >
                                           <XIcon size={12} />
@@ -578,9 +579,7 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
                                       )}
                                     </div>
                                   ))
-                                ) : (
-                                  <div className="h-5"></div> // Empty space to maintain position
-                                )}
+                                ) : null}
                               </div>
                             </div>
                           );
@@ -615,14 +614,14 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
                         <div className="text-sm font-bold text-gray-900">{date ? date.getDate() : ''}</div>
                       </div>
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       {availableShifts.map((shift) => {
                         const staffDetails = getStaffDetailsForDayAndShift(dateStr, shift.id, position.id);
                         
                         return (
-                          <div key={shift.id} className="min-h-[30px]">
-                            <div className="text-xs font-semibold text-gray-700 mb-1">{shift.name}</div>
-                            <div className="flex flex-wrap gap-1 mb-1 min-h-[20px]">
+                          <div key={shift.id} className="min-h-[50px]">
+                            <div className="text-xs font-semibold text-gray-700 mb-1.5">{shift.name}</div>
+                            <div className="flex flex-wrap gap-1 min-h-[30px]">
                               {staffDetails.length > 0 ? (
                                 staffDetails.map((staff) => (
                                   <div
@@ -642,9 +641,7 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
                                     )}
                                   </div>
                                 ))
-                              ) : (
-                                <div className="h-5"></div> // Empty space to maintain position
-                              )}
+                              ) : null}
                             </div>
                           </div>
                         );
