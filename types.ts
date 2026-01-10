@@ -3,6 +3,25 @@ export enum UserRole {
   STAFF = 'STAFF'
 }
 
+export interface Role {
+  id: string;
+  name: string;
+  description?: string;
+  isSystem: boolean;
+  permissionsCount?: number;
+  usersCount?: number;
+  permissions?: Permission[];
+}
+
+export interface Permission {
+  id: string;
+  name: string;
+  resource: string;
+  action: string;
+  description?: string;
+  fullName?: string;
+}
+
 export interface Branch {
   id: string;
   name: string;
@@ -80,7 +99,9 @@ export interface User {
   id: string;
   username: string;
   fullName: string;
-  role: UserRole;
+  role: UserRole; // Legacy field for backward compatibility
+  roleId?: string;
+  roleName?: string;
   avatar?: string;
   status?: UserStatus;
   branchId?: string;

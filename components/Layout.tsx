@@ -3,7 +3,7 @@ import { User, UserRole } from '../types';
 import { 
   LayoutDashboard, Clock, History, LogOut, User as UserIcon, Settings, 
   UserCog, Users, Building2, Briefcase, CalendarPlus, ClipboardCheck,
-  Menu, X, ChevronRight, Calendar, Eye
+  Menu, X, ChevronRight, Calendar, Eye, Shield
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -72,6 +72,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, currentView, onN
               <NavItem view="admin-forgot-checkin-requests" icon={ClipboardCheck} label="Duyệt xin quên checkin/out" />
               <NavItem view="settings" icon={Settings} label="Cài đặt IP" />
               <NavItem view="app-settings" icon={Settings} label="Cài đặt hệ thống" />
+              {(user.roleName === 'super_admin' || user.role?.toLowerCase() === 'super_admin') && (
+                <NavItem view="role-management" icon={Shield} label="Quản lý Vai trò" />
+              )}
             </>
           )}
         </nav>
@@ -204,6 +207,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, currentView, onN
                   <NavItem view="admin-forgot-checkin-requests" icon={ClipboardCheck} label="Duyệt xin quên checkin/out" onClick={closeMobileMenu} />
                   <NavItem view="settings" icon={Settings} label="Cài đặt IP" onClick={closeMobileMenu} />
                   <NavItem view="app-settings" icon={Settings} label="Cài đặt hệ thống" onClick={closeMobileMenu} />
+                  {(user.roleName === 'super_admin' || user.role?.toLowerCase() === 'super_admin') && (
+                    <NavItem view="role-management" icon={Shield} label="Quản lý Vai trò" onClick={closeMobileMenu} />
+                  )}
                 </>
               )}
             </nav>

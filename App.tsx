@@ -19,6 +19,7 @@ import { AppSettings } from './components/AppSettings';
 import { Settings } from './components/Settings';
 import { ForgotCheckinRequestForm } from './components/ForgotCheckinRequestForm';
 import { AdminForgotCheckinRequests } from './components/AdminForgotCheckinRequests';
+import RoleManagement from './components/RoleManagement';
 import { User } from './types';
 import * as api from './services/api';
 
@@ -100,6 +101,7 @@ const App: React.FC = () => {
       {view === 'settings' && <Settings user={user} />}
       {view === 'forgot-checkin-request' && <ForgotCheckinRequestForm user={user} />}
       {view === 'admin-forgot-checkin-requests' && <AdminForgotCheckinRequests user={user} />}
+      {view === 'role-management' && <RoleManagement user={user} />}
       
       {showProfileSettings && (
         <ProfileSettings

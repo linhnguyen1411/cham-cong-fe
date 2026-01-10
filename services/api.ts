@@ -1,5 +1,5 @@
 
-import { User, WorkSession, AuthResponse, UserRole, UserStatus, WorkShift, Branch, Department, Position, ShiftRegistration, PositionLevel, ShiftRegistrationStatus, WorkScheduleType, AppSetting, ForgotCheckinRequest } from '../types';
+import { User, WorkSession, AuthResponse, UserRole, UserStatus, WorkShift, Branch, Department, Position, ShiftRegistration, PositionLevel, ShiftRegistrationStatus, WorkScheduleType, AppSetting, ForgotCheckinRequest, Role, Permission } from '../types';
 
 const STORAGE_KEYS = {
   CURRENT_USER: 'timekeep_user'
@@ -144,7 +144,9 @@ const mapUserFromApi = (data: any): User => ({
   id: String(data.id || data.user_id),
   username: data.username,
   fullName: data.full_name || data.fullName || data.username,
-  role: (data.role && String(data.role).toLowerCase() === 'admin') ? UserRole.ADMIN : UserRole.STAFF,
+  role: (data.role_name === 'admin' || (data.role && String(data.role).toLowerCase() === 'admin')) ? UserRole.ADMIN : UserRole.STAFF,
+  roleId: data.role_id ? String(data.role_id) : undefined,
+  roleName: data.role_name || undefined,
   status: data.status ? (data.status === 'deactive' ? UserStatus.DEACTIVE : UserStatus.ACTIVE) : UserStatus.ACTIVE,
   avatar: data.avatar_url || data.avatar || `https://ui-avatars.com/api/?name=${data.username}&background=random`,
   branchId: data.branch_id ? String(data.branch_id) : undefined,
@@ -291,7 +293,8 @@ export const createUser = async (userData: {
     password: string;
     passwordConfirmation: string;
     fullName: string;
-    role: 'admin' | 'staff';
+    role?: 'admin' | 'staff';
+    roleId?: string;
     branchId?: string;
     departmentId?: string;
     positionId?: string;
@@ -303,7 +306,8 @@ export const createUser = async (userData: {
         password: userData.password,
         password_confirmation: userData.passwordConfirmation,
         full_name: userData.fullName,
-        role: userData.role
+        role: userData.role,
+        role_id: userData.roleId ? Number(userData.roleId) : undefined
     };
     
     // Add optional fields if provided
@@ -1305,4 +1309,120 @@ export const rejectForgotCheckinRequest = async (id: string, rejectedReason?: st
       updatedAt: data.request.updated_at
     }
   };
+};
+
+
+// --- ROLES & PERMISSIONS API (SUPER ADMIN) ---
+
+const mapRoleFromApi = (data: any): Role => ({
+  id: String(data.id),
+  name: data.name,
+  description: data.description || '',
+  isSystem: data.is_system || false,
+  permissionsCount: data.permissions_count,
+  usersCount: data.users_count,
+  permissions: data.permissions ? data.permissions.map(mapPermissionFromApi) : []
+});
+
+const mapPermissionFromApi = (data: any): Permission => ({
+  id: String(data.id),
+  name: data.name,
+  resource: data.resource,
+  action: data.action,
+  description: data.description || '',
+  fullName: data.full_name || `${data.resource}:${data.action}`
+});
+
+export const getRoles = async (): Promise<Role[]> => {
+  try {
+    const data = await fetchAPI('/roles');
+    return Array.isArray(data) ? data.map(mapRoleFromApi) : [];
+  } catch (e) {
+    console.error("Get roles failed:", e);
+    return [];
+  }
+};
+
+export const getRole = async (id: string): Promise<Role | null> => {
+  try {
+    const data = await fetchAPI(`/roles/${id}`);
+    return mapRoleFromApi(data);
+  } catch (e) {
+    console.error("Get role failed:", e);
+    return null;
+  }
+};
+
+export const createRole = async (roleData: {
+  name: string;
+  description?: string;
+}): Promise<Role> => {
+  const data = await fetchAPI('/roles', {
+    method: 'POST',
+    body: JSON.stringify({
+      role: {
+        name: roleData.name,
+        description: roleData.description || ''
+      }
+    })
+  });
+  return mapRoleFromApi(data);
+};
+
+export const updateRole = async (id: string, roleData: {
+  name?: string;
+  description?: string;
+}): Promise<Role> => {
+  const data = await fetchAPI(`/roles/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      role: {
+        name: roleData.name,
+        description: roleData.description
+      }
+    })
+  });
+  return mapRoleFromApi(data);
+};
+
+export const deleteRole = async (id: string): Promise<void> => {
+  await fetchAPI(`/roles/${id}`, {
+    method: 'DELETE'
+  });
+};
+
+export const assignPermissionsToRole = async (roleId: string, permissionIds: string[]): Promise<Role> => {
+  const data = await fetchAPI(`/roles/${roleId}/assign_permissions`, {
+    method: 'POST',
+    body: JSON.stringify({
+      permission_ids: permissionIds.map(id => Number(id))
+    })
+  });
+  return mapRoleFromApi(data.role || data);
+};
+
+export const getPermissions = async (): Promise<{ permissions: Permission[], grouped: Record<string, Permission[]> }> => {
+  try {
+    const data = await fetchAPI('/permissions');
+    return {
+      permissions: data.permissions ? data.permissions.map(mapPermissionFromApi) : [],
+      grouped: data.grouped ? Object.keys(data.grouped).reduce((acc, resource) => {
+        acc[resource] = data.grouped[resource].map(mapPermissionFromApi);
+        return acc;
+      }, {} as Record<string, Permission[]>) : {}
+    };
+  } catch (e) {
+    console.error("Get permissions failed:", e);
+    return { permissions: [], grouped: {} };
+  }
+};
+
+export const getPermission = async (id: string): Promise<Permission | null> => {
+  try {
+    const data = await fetchAPI(`/permissions/${id}`);
+    return mapPermissionFromApi(data);
+  } catch (e) {
+    console.error("Get permission failed:", e);
+    return null;
+  }
 };

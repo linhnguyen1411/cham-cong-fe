@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Loader } from 'lucide-react';
-import { createUser, getBranches, getDepartments, getPositions } from '../services/api';
-import { Branch, Department, Position, WorkScheduleType } from '../types';
+import { createUser, getBranches, getDepartments, getPositions, getRoles } from '../services/api';
+import { Branch, Department, Position, WorkScheduleType, Role } from '../types';
 
 interface CreateUserModalProps {
   isOpen: boolean;
@@ -15,7 +15,8 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({ isOpen, onClos
     password: '',
     passwordConfirmation: '',
     fullName: '',
-    role: 'staff' as 'admin' | 'staff',
+    role: 'staff' as 'admin' | 'staff', // Legacy field for backward compatibility
+    roleId: '',
     branchId: '',
     departmentId: '',
     positionId: '',
@@ -25,6 +26,7 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({ isOpen, onClos
   const [branches, setBranches] = useState<Branch[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,14 +41,21 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({ isOpen, onClos
   const loadData = async () => {
     setLoadingData(true);
     try {
-      const [branchesData, departmentsData, positionsData] = await Promise.all([
+      const [branchesData, departmentsData, positionsData, rolesData] = await Promise.all([
         getBranches(),
         getDepartments(),
-        getPositions()
+        getPositions(),
+        getRoles()
       ]);
       setBranches(branchesData);
       setDepartments(departmentsData);
       setPositions(positionsData);
+      setRoles(rolesData);
+      // Set default role to 'staff' if available
+      const staffRole = rolesData.find(r => r.name === 'staff');
+      if (staffRole) {
+        setFormData(prev => ({ ...prev, roleId: staffRole.id }));
+      }
     } catch (err) {
       console.error('Error loading data:', err);
     } finally {
@@ -107,19 +116,22 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({ isOpen, onClos
         password: formData.password,
         passwordConfirmation: formData.passwordConfirmation,
         fullName: formData.fullName,
-        role: formData.role,
+        role: formData.role, // Keep for backward compatibility
+        roleId: formData.roleId || undefined,
         branchId: formData.branchId || undefined,
         departmentId: formData.departmentId || undefined,
         positionId: formData.positionId || undefined,
         workScheduleType: formData.workScheduleType,
         workAddress: formData.workAddress || undefined
       });
+      const staffRole = roles.find(r => r.name === 'staff');
       setFormData({
         username: '',
         password: '',
         passwordConfirmation: '',
         fullName: '',
         role: 'staff',
+        roleId: staffRole?.id || '',
         branchId: '',
         departmentId: '',
         positionId: '',
@@ -227,18 +239,29 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({ isOpen, onClos
               Vai Trò
             </label>
             <select
-              name="role"
-              value={formData.role}
-              onChange={handleInputChange}
+              name="roleId"
+              value={formData.roleId}
+              onChange={(e) => {
+                setFormData(prev => ({ ...prev, roleId: e.target.value }));
+                const selectedRole = roles.find(r => r.id === e.target.value);
+                if (selectedRole) {
+                  setFormData(prev => ({ ...prev, role: selectedRole.name === 'admin' ? 'admin' : 'staff' }));
+                }
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              disabled={loading}
+              disabled={loading || loadingData}
+              required
             >
-              <option value="staff">Nhân Viên</option>
-              <option value="admin">Quản Trị Viên</option>
+              <option value="">-- Chọn vai trò --</option>
+              {roles.map(role => (
+                <option key={role.id} value={role.id}>
+                  {role.name} {role.isSystem && '(Hệ thống)'}
+                </option>
+              ))}
             </select>
           </div>
 
-          {formData.role === 'staff' && (
+          {(formData.role === 'staff' || !formData.roleId || roles.find(r => r.id === formData.roleId)?.name === 'staff') && (
             <>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
