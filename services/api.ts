@@ -625,22 +625,28 @@ export const adminUpdateWorkSession = async (id: string, updates: {
 
 /**
  * Chuẩn hóa giá trị giờ từ backend về định dạng "HH:MM".
+ * Luôn hiển thị theo múi giờ Việt Nam (UTC+7).
  * Xử lý các dạng:
  *   - "09:00"            → "09:00"
  *   - "09:00:00"         → "09:00"
- *   - "2025-01-01T02:00:00Z" (UTC datetime) → giờ local của browser (ví dụ "09:00" ở UTC+7)
- *   - "2025-01-01T09:00:00+07:00"           → "09:00"
+ *   - "2025-01-01T02:00:00Z" (UTC) → "09:00" (02:00 UTC = 09:00 VN)
+ *   - "2025-01-01T09:00:00+07:00"  → "09:00"
  */
+const VIETNAM_UTC_OFFSET_HOURS = 7;
+
 const normalizeShiftTime = (val: any, fallback = '08:00'): string => {
   if (!val) return fallback;
   const str = String(val).trim();
-  // ISO datetime hoặc có chứa date part → parse thành Date để lấy giờ local
+  // ISO datetime → parse và lấy giờ theo múi giờ Việt Nam (UTC+7)
   if (str.length > 8 && (str.includes('T') || (str.includes('-') && str.includes(':')))) {
     try {
       const d = new Date(str);
       if (!isNaN(d.getTime())) {
-        const h = String(d.getHours()).padStart(2, '0');
-        const m = String(d.getMinutes()).padStart(2, '0');
+        const utcH = d.getUTCHours();
+        const utcM = d.getUTCMinutes();
+        const vietnamH = (utcH + VIETNAM_UTC_OFFSET_HOURS + 24) % 24;
+        const h = String(vietnamH).padStart(2, '0');
+        const m = String(utcM).padStart(2, '0');
         return `${h}:${m}`;
       }
     } catch {
@@ -651,6 +657,14 @@ const normalizeShiftTime = (val: any, fallback = '08:00'): string => {
   const match = str.match(/^(\d{1,2}):(\d{2})/);
   if (match) return `${match[1].padStart(2, '0')}:${match[2]}`;
   return fallback;
+};
+
+/** Chỉ lấy HH:MM khi gửi lên API (tránh gửi ISO datetime) */
+const formatShiftTimeForApi = (val: string | undefined): string => {
+  if (!val) return '08:00';
+  const str = String(val).trim();
+  const match = str.match(/^(\d{1,2}):(\d{2})/);
+  return match ? `${match[1].padStart(2, '0')}:${match[2]}` : '08:00';
 };
 
 const mapShiftFromApi = (data: any): WorkShift => ({
@@ -682,8 +696,8 @@ export const createWorkShift = async (shift: Omit<WorkShift, 'id' | 'createdAt'>
         body: JSON.stringify({ 
             work_shift: {
                 name: shift.name,
-                start_time: shift.startTime,
-                end_time: shift.endTime,
+                start_time: formatShiftTimeForApi(shift.startTime),
+                end_time: formatShiftTimeForApi(shift.endTime),
                 late_threshold: shift.lateThreshold,
                 department_id: shift.departmentId ? Number(shift.departmentId) : null
             }
@@ -698,8 +712,8 @@ export const updateWorkShift = async (id: string, shift: Partial<WorkShift>): Pr
         body: JSON.stringify({ 
             work_shift: {
                 name: shift.name,
-                start_time: shift.startTime,
-                end_time: shift.endTime,
+                start_time: shift.startTime !== undefined ? formatShiftTimeForApi(shift.startTime) : undefined,
+                end_time: shift.endTime !== undefined ? formatShiftTimeForApi(shift.endTime) : undefined,
                 late_threshold: shift.lateThreshold,
                 department_id: shift.departmentId ? Number(shift.departmentId) : null
             }

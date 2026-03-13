@@ -36,6 +36,7 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
     notes: ''
   });
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     loadAvailableUsers();
@@ -71,19 +72,23 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
 
   const loadData = async () => {
     setLoading(true);
-    let data: WorkSession[] = [];
-    if (selectedUserId === 'all' || selectedUserId === '') {
-      // Admin/Manager: Xem tất cả (load từ getAllHistory hoặc không filter user_id)
-      data = await api.getAllHistory();
-    } else if (selectedUserId === user.id) {
-      // Xem của chính mình
-      data = await api.getUserHistory(user.id);
-    } else {
-      // Xem của user khác
-      data = await api.getUserHistory(selectedUserId);
+    setLoadError(null);
+    try {
+      let data: WorkSession[] = [];
+      if (selectedUserId === 'all' || selectedUserId === '') {
+        data = await api.getAllHistory();
+      } else if (selectedUserId === user.id) {
+        data = await api.getUserHistory(user.id);
+      } else {
+        data = await api.getUserHistory(selectedUserId);
+      }
+      setSessions(data);
+    } catch (err: any) {
+      setLoadError(err?.message || 'Không thể tải dữ liệu');
+      setSessions([]);
+    } finally {
+      setLoading(false);
     }
-    setSessions(data);
-    setLoading(false);
   };
 
   const getFilteredSessions = () => {
@@ -170,6 +175,24 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
 
   const formatDurationHours = (seconds: number): number => {
     return Math.round((seconds / 3600) * 100) / 100; // Round to 2 decimal places
+  };
+
+  /** Chuyển timestamp sang "YYYY-MM-DDTHH:mm" theo múi giờ VN (UTC+7) cho input datetime-local */
+  const formatTimestampForDatetimeLocalVN = (timestamp: number): string => {
+    const d = new Date(timestamp);
+    const s = d.toLocaleString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' });
+    const [datePart, timePart] = s.split(' ');
+    const [y, m, day] = datePart.split('-');
+    const [h, min] = timePart.split(':');
+    return `${y}-${m}-${day}T${h}:${min}`;
+  };
+
+  /** Parse "YYYY-MM-DDTHH:mm" như giờ VN (UTC+7) và trả về ISO string */
+  const parseDatetimeLocalAsVN = (val: string): string => {
+    if (!val || !val.includes('T')) return '';
+    const vnString = `${val}+07:00`;
+    const d = new Date(vnString);
+    return isNaN(d.getTime()) ? '' : d.toISOString();
   };
 
   const exportToExcel = async () => {
@@ -388,76 +411,83 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
           </p>
         </div>
         
-        <div className="flex flex-col md:flex-row items-start md:items-end gap-3">
+        <div className="flex flex-col md:flex-row items-stretch md:items-end gap-3 flex-wrap">
           {/* User selector - chỉ hiển thị cho admin và manager */}
           {(histIsAdmin || histCanManage) && (
-            <div className="relative">
-              <label className="block text-xs text-gray-600 mb-1">Chọn nhân viên</label>
-              {/* Search input */}
+            <div className="flex flex-col min-w-[200px] w-full md:w-[220px] shrink-0">
+              <label className="block text-xs font-medium text-slate-600 mb-1.5">Chọn nhân viên</label>
               <input
                 type="text"
                 value={userSearchTerm}
                 onChange={(e) => setUserSearchTerm(e.target.value)}
-                placeholder="Tìm kiếm nhân viên..."
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white h-[42px] mb-2"
+                placeholder="Tìm kiếm..."
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white h-[38px] mb-1.5"
               />
-              {/* User select */}
               <select
                 value={selectedUserId}
                 onChange={(e) => setSelectedUserId(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white h-[42px] min-w-[200px]"
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white h-[38px] appearance-none cursor-pointer"
                 disabled={loadingUsers}
+                style={{ minHeight: 38 }}
               >
                 {histIsAdmin && (
                   <option value="all">Tất cả nhân viên</option>
                 )}
                 <option value={user.id}>Cá nhân (tôi)</option>
-                {availableUsers
-                  .filter(u => {
-                    // Filter by search term
+                {(() => {
+                  const filtered = availableUsers.filter(u => {
                     if (userSearchTerm.trim() === '') return true;
-                    const searchLower = userSearchTerm.toLowerCase();
+                    const searchLower = userSearchTerm.toLowerCase().trim();
+                    const fullName = (u.fullName || '').toLowerCase();
+                    const username = (u.username || '').toLowerCase();
+                    const positionName = (u.positionName || '').toLowerCase();
+                    const departmentName = (u.departmentName || '').toLowerCase();
                     return (
-                      u.fullName.toLowerCase().includes(searchLower) ||
-                      u.username?.toLowerCase().includes(searchLower) ||
-                      u.positionName?.toLowerCase().includes(searchLower) ||
-                      u.departmentName?.toLowerCase().includes(searchLower)
+                      fullName.includes(searchLower) ||
+                      username.includes(searchLower) ||
+                      positionName.includes(searchLower) ||
+                      departmentName.includes(searchLower)
                     );
-                  })
-                  .filter(u => u.id !== user.id)
-                  .map(u => (
+                  }).filter(u => u.id !== user.id);
+                  if (filtered.length === 0 && userSearchTerm.trim()) {
+                    return <option value="" disabled>Không tìm thấy nhân viên</option>;
+                  }
+                  return filtered.map(u => (
                     <option key={u.id} value={u.id}>
                       {u.fullName} {u.positionName ? `(${u.positionName})` : ''} {u.departmentName ? `- ${u.departmentName}` : ''}
                     </option>
-                  ))}
+                  ));
+                })()}
               </select>
             </div>
           )}
-            <div className="relative">
-                <Filter size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" />
-                <select 
-                    value={filter}
-                    onChange={(e) => {
-                      const newFilter = e.target.value as FilterType;
-                      setFilter(newFilter);
-                      // Clear date pickers when changing filter
-                      setDateFrom('');
-                      setDateTo('');
-                    }}
-                    className="pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white h-[42px]"
-                >
+            <div className="flex flex-col shrink-0">
+                <label className="block text-xs font-medium text-slate-600 mb-1.5">Bộ lọc</label>
+                <div className="relative">
+                  <Filter size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  <select 
+                      value={filter}
+                      onChange={(e) => {
+                        const newFilter = e.target.value as FilterType;
+                        setFilter(newFilter);
+                        setDateFrom('');
+                        setDateTo('');
+                      }}
+                      className="pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white h-[38px] min-w-[140px]"
+                  >
                     <option value={FilterType.TODAY}>Hôm nay</option>
                     <option value={FilterType.WEEK}>7 ngày qua</option>
                     <option value={FilterType.MONTH}>30 ngày qua</option>
                     <option value={FilterType.THIS_MONTH}>Tháng này</option>
                     <option value={FilterType.ALL}>Tất cả</option>
-                </select>
+                  </select>
+                </div>
             </div>
             
             {/* Date Range Picker - Separate */}
             <div className="flex items-end gap-2">
               <div>
-                <label className="block text-xs text-gray-600 mb-1">Từ ngày</label>
+                <label className="block text-xs font-medium text-slate-600 mb-1.5">Từ ngày</label>
                 <input
                   type="date"
                   value={dateFrom}
@@ -468,22 +498,22 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
                       setDateTo('');
                     }
                   }}
-                  className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white h-[42px]"
+                  className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white h-[38px]"
                   placeholder="Chọn ngày bắt đầu"
                 />
               </div>
-              <div className="mb-2">
-                <span className="text-gray-500 text-lg">→</span>
+              <div className="flex items-end pb-2">
+                <span className="text-slate-400 text-lg">→</span>
               </div>
               <div>
-                <label className="block text-xs text-gray-600 mb-1">Đến ngày</label>
+                <label className="block text-xs font-medium text-slate-600 mb-1.5">Đến ngày</label>
                 <input
                   type="date"
                   value={dateTo}
                   onChange={(e) => setDateTo(e.target.value)}
                   min={dateFrom || undefined}
                   disabled={!dateFrom}
-                  className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white disabled:bg-gray-100 disabled:cursor-not-allowed h-[42px]"
+                  className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white disabled:bg-slate-100 disabled:cursor-not-allowed h-[38px]"
                   placeholder="Chọn ngày kết thúc"
                 />
               </div>
@@ -500,6 +530,12 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
             </button>
         </div>
       </div>
+
+      {loadError && (
+        <div className="mx-6 mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+          {loadError}
+        </div>
+      )}
 
       <div className="overflow-x-auto -mx-6 px-6">
         <table className="w-full text-left whitespace-nowrap">
@@ -633,11 +669,9 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
                       <button
                         onClick={() => {
                           setEditingSession(session);
-                          const startDate = new Date(session.startTime);
-                          const endDate = session.endTime ? new Date(session.endTime) : null;
                           setEditForm({
-                            startTime: startDate.toISOString().slice(0, 16),
-                            endTime: endDate ? endDate.toISOString().slice(0, 16) : '',
+                            startTime: formatTimestampForDatetimeLocalVN(session.startTime),
+                            endTime: session.endTime ? formatTimestampForDatetimeLocalVN(session.endTime) : '',
                             workSummary: session.workSummary || '',
                             challenges: session.challenges || '',
                             suggestions: session.suggestions || '',
@@ -788,24 +822,17 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
 
                     setSaving(true);
                     try {
-                      // Validate dates before sending
-                      const startDate = new Date(editForm.startTime);
-                      if (isNaN(startDate.getTime())) {
+                      const startTimeISO = parseDatetimeLocalAsVN(editForm.startTime);
+                      if (!startTimeISO) {
                         alert('Giờ vào không hợp lệ');
                         setSaving(false);
                         return;
                       }
                       
-                      let endTimeISO: string | null = null;
-                      if (editForm.endTime) {
-                        const endDate = new Date(editForm.endTime);
-                        if (!isNaN(endDate.getTime())) {
-                          endTimeISO = endDate.toISOString();
-                        }
-                      }
+                      const endTimeISO = editForm.endTime ? parseDatetimeLocalAsVN(editForm.endTime) : null;
                       
                       await api.adminUpdateWorkSession(editingSession.id, {
-                        startTime: startDate.toISOString(),
+                        startTime: startTimeISO,
                         endTime: endTimeISO,
                         workSummary: editForm.workSummary || undefined,
                         challenges: editForm.challenges || undefined,
