@@ -20,7 +20,9 @@ import { Settings } from './components/Settings';
 import { ForgotCheckinRequestForm } from './components/ForgotCheckinRequestForm';
 import { AdminForgotCheckinRequests } from './components/AdminForgotCheckinRequests';
 import RoleManagement from './components/RoleManagement';
-import { User } from './types';
+import TeamManagement from './components/TeamManagement';
+import BranchManagement from './components/BranchManagement';
+import { User, UserRole } from './types';
 import * as api from './services/api';
 
 const App: React.FC = () => {
@@ -30,14 +32,27 @@ const App: React.FC = () => {
   const [showProfileSettings, setShowProfileSettings] = useState(false);
 
   useEffect(() => {
-    // Check for existing session in storage (LocalStorage or SessionStorage)
     const authData = api.getCurrentUser();
     if (authData) {
+      // Set user ngay từ cache để tránh nháy về màn login khi F5
       setUser(authData.user);
-      // Set default view based on user role
-      // Admin: show staff schedule (lịch làm việc)
-      // Staff: show tracker (chấm công)
-      setView(authData.user.role === 'ADMIN' ? 'staff-schedule' : 'tracker');
+      setView(authData.user.role === UserRole.ADMIN || authData.user.canManageTeam
+        ? 'view-all-staff-schedule'
+        : 'tracker');
+      // Reload user từ API để cập nhật role/flags mới nhất (chạy nền)
+      api.getUser(authData.user.id).then(updatedUser => {
+        setUser(updatedUser);
+        const updatedAuthData = { ...authData, user: updatedUser };
+        if (localStorage.getItem('timekeep_user')) {
+          localStorage.setItem('timekeep_user', JSON.stringify(updatedAuthData));
+        } else if (sessionStorage.getItem('timekeep_user')) {
+          sessionStorage.setItem('timekeep_user', JSON.stringify(updatedAuthData));
+        }
+      }).catch(() => {
+        // 401: logout đã clear storage → setUser(null) để hiện màn login
+        // Lỗi mạng: giữ user từ cache (đã set ở trên)
+        if (!api.getCurrentUser()) setUser(null);
+      });
     }
     setIsLoading(false);
   }, []);
@@ -48,7 +63,9 @@ const App: React.FC = () => {
     // Set default view based on user role
     // Admin: show staff schedule (lịch làm việc)
     // Staff: show tracker (chấm công)
-    setView(response.user.role === 'ADMIN' ? 'staff-schedule' : 'tracker');
+    setView(response.user.role === UserRole.ADMIN || response.user.canManageTeam
+      ? 'view-all-staff-schedule'
+      : 'tracker');
   };
 
   const handleLogout = () => {
@@ -89,19 +106,21 @@ const App: React.FC = () => {
       {view === 'tracker' && <TimeTracker user={user} />}
       {view === 'history' && <History user={user} />}
       {view === 'shift-registration' && <ShiftRegistration user={user} />}
-      {view === 'department-settings' && <DepartmentSettings />}
-      {view === 'position-settings' && <PositionSettings />}
-      {view === 'shift-settings' && <ShiftSettings />}
+      {view === 'department-settings' && <DepartmentSettings currentUser={user} />}
+      {view === 'position-settings' && <PositionSettings currentUser={user} />}
+      {view === 'shift-settings' && <ShiftSettings currentUser={user} />}
       {view === 'shift-approval' && <ShiftApproval user={user} />}
       {view === 'staff-schedule' && <ViewAllStaffSchedule user={user} />}
       {view === 'my-schedule' && <MySchedule user={user} />}
       {view === 'view-all-staff-schedule' && <ViewAllStaffSchedule user={user} />}
-      {view === 'staff-management' && <StaffManagement />}
+      {view === 'staff-management' && <StaffManagement currentUser={user} />}
       {view === 'app-settings' && <AppSettings />}
       {view === 'settings' && <Settings user={user} />}
       {view === 'forgot-checkin-request' && <ForgotCheckinRequestForm user={user} />}
       {view === 'admin-forgot-checkin-requests' && <AdminForgotCheckinRequests user={user} />}
       {view === 'role-management' && <RoleManagement user={user} />}
+      {view === 'team-management' && <TeamManagement user={user} />}
+      {view === 'branch-management' && <BranchManagement currentUser={user} />}
       
       {showProfileSettings && (
         <ProfileSettings

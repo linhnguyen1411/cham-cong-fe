@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, UserRole } from '../types';
+import { usePermissions } from '../hooks/usePermissions';
 import { 
   LayoutDashboard, Clock, History, LogOut, User as UserIcon, Settings, 
   UserCog, Users, Building2, Briefcase, CalendarPlus, ClipboardCheck,
@@ -17,6 +18,7 @@ interface LayoutProps {
 
 export const Layout: React.FC<LayoutProps> = ({ children, user, currentView, onNavigate, onLogout, onOpenProfile }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  
   
   const NavItem = ({ view, icon: Icon, label, onClick }: { view: string, icon: any, label: string, onClick?: () => void }) => (
     <button
@@ -38,6 +40,20 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, currentView, onN
 
   const closeMobileMenu = () => setMobileMenuOpen(false);
 
+  // Role helpers — centralized via usePermissions
+  const { isSuperAdmin, isBranchAdmin, isDepartmentHead, isPositionManagerRole, isAdmin, canManageTeam } = usePermissions(user);
+  const isAnyAdmin = isAdmin;
+  const canManage = canManageTeam;
+
+  const getRoleLabel = () => {
+    if (isSuperAdmin) return 'Quản trị hệ thống';
+    if (isBranchAdmin) return 'Admin Chi nhánh';
+    if (isDepartmentHead) return 'Quản lý khối';
+    if (isPositionManagerRole) return 'Quản lý vị trí';
+    if (isAnyAdmin) return 'Quản trị viên';
+    return 'Nhân viên';
+  };
+
   return (
     <div className="flex h-screen bg-slate-50">
       {/* Sidebar - Desktop */}
@@ -50,31 +66,57 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, currentView, onN
 
         <nav className="flex-1 p-4 overflow-y-auto">
           <NavItem view="dashboard" icon={LayoutDashboard} label="Tổng quan" />
-          {user.role !== UserRole.ADMIN && (
+
+          {/* Nhân viên & Department Head: menu cá nhân */}
+          {!isAnyAdmin && (
             <>
-            <NavItem view="tracker" icon={Clock} label="Chấm công" />
+              <NavItem view="tracker" icon={Clock} label="Chấm công" />
               <NavItem view="shift-registration" icon={CalendarPlus} label="Đăng ký ca" />
               <NavItem view="my-schedule" icon={Calendar} label="Lịch làm việc" />
               <NavItem view="view-all-staff-schedule" icon={Eye} label="Xem lịch tuần này" />
               <NavItem view="forgot-checkin-request" icon={ClipboardCheck} label="Quên in/out" />
             </>
           )}
+
+          {/* Cấp 3: Department Head + Branch Admin: Quản lý Team */}
+          {(canManage || (isAnyAdmin && !isSuperAdmin)) && (
+            <>
+              <div className="mt-4 mb-2 px-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">Quản lý Team</div>
+              <NavItem view="team-management" icon={UserCog} label="Quản lý Team" />
+            </>
+          )}
+
           <NavItem view="history" icon={History} label="Lịch sử" />
-          {user.role === UserRole.ADMIN && (
+
+          {/* Duyệt: cho bất kỳ ai có quyền quản lý */}
+          {(canManage || isAnyAdmin) && (
+            <>
+              <div className="mt-4 mb-2 px-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">Duyệt</div>
+              <NavItem view="shift-approval" icon={ClipboardCheck} label="Duyệt đăng ký ca" />
+              <NavItem view="admin-forgot-checkin-requests" icon={ClipboardCheck} label="Duyệt quên checkin/out" />
+            </>
+          )}
+
+          {/* Cấp 1: Super Admin only - Hệ thống */}
+          {isSuperAdmin && (
+            <>
+              <div className="mt-4 mb-2 px-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">Hệ thống</div>
+              <NavItem view="branch-management" icon={Building2} label="Quản lý Chi nhánh" />
+              <NavItem view="role-management" icon={Shield} label="Quản lý Vai trò" />
+            </>
+          )}
+
+          {/* Cấp 2: Branch Admin + Super Admin - Quản lý chi nhánh */}
+          {isAnyAdmin && (
             <>
               <div className="mt-4 mb-2 px-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">Quản lý</div>
               <NavItem view="department-settings" icon={Building2} label="Quản lý Khối" />
               <NavItem view="position-settings" icon={Briefcase} label="Quản lý Vị trí" />
               <NavItem view="shift-settings" icon={Settings} label="Cài đặt ca làm" />
-              <NavItem view="shift-approval" icon={ClipboardCheck} label="Duyệt đăng ký ca" />
-              <NavItem view="staff-schedule" icon={Calendar} label="Lịch làm việc" />
-              <NavItem view="staff-management" icon={Users} label="Quản lý nhân viên" />
-              <NavItem view="admin-forgot-checkin-requests" icon={ClipboardCheck} label="Duyệt xin quên checkin/out" />
+              <NavItem view="staff-schedule" icon={Calendar} label="Lịch làm việc NV" />
+              <NavItem view="staff-management" icon={Users} label="Quản lý Nhân viên" />
               <NavItem view="settings" icon={Settings} label="Cài đặt IP" />
               <NavItem view="app-settings" icon={Settings} label="Cài đặt hệ thống" />
-              {(user.roleName === 'super_admin' || user.role?.toLowerCase() === 'super_admin') && (
-                <NavItem view="role-management" icon={Shield} label="Quản lý Vai trò" />
-              )}
             </>
           )}
         </nav>
@@ -93,7 +135,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, currentView, onN
             </div>
             <div className="flex-1">
               <p className="text-sm font-semibold text-slate-800">{user.fullName}</p>
-              <p className="text-xs text-slate-500">{user.role === UserRole.ADMIN ? 'Quản trị viên' : 'Nhân viên'}</p>
+              <p className="text-xs text-slate-500">{getRoleLabel()}</p>
             </div>
             <UserCog size={16} className="text-slate-400" />
           </div>
@@ -172,7 +214,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, currentView, onN
               </div>
               <div className="flex-1">
                 <p className="font-semibold text-slate-800">{user.fullName}</p>
-                <p className="text-xs text-slate-500">{user.role === UserRole.ADMIN ? 'Quản trị viên' : 'Nhân viên'}</p>
+                <p className="text-xs text-slate-500">{getRoleLabel()}</p>
               </div>
               <ChevronRight size={18} className="text-slate-400" />
             </div>
@@ -180,8 +222,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, currentView, onN
             {/* Navigation */}
             <nav className="flex-1 p-4 overflow-y-auto">
               <NavItem view="dashboard" icon={LayoutDashboard} label="Tổng quan" onClick={closeMobileMenu} />
-              
-              {user.role !== UserRole.ADMIN && (
+
+              {/* Nhân viên & Department Head */}
+              {!isAnyAdmin && (
                 <>
                   <NavItem view="tracker" icon={Clock} label="Chấm công" onClick={closeMobileMenu} />
                   <NavItem view="shift-registration" icon={CalendarPlus} label="Đăng ký ca" onClick={closeMobileMenu} />
@@ -190,26 +233,46 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, currentView, onN
                   <NavItem view="forgot-checkin-request" icon={ClipboardCheck} label="Quên in/out" onClick={closeMobileMenu} />
                 </>
               )}
-              
-              <NavItem view="history" icon={History} label="Lịch sử" onClick={closeMobileMenu} />
-              
-              {user.role === UserRole.ADMIN && (
+
+              {/* Cấp 3: Department Head + Branch Admin */}
+              {(canManage || (isAnyAdmin && !isSuperAdmin)) && (
                 <>
-                  <div className="mt-4 mb-2 px-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                    Quản lý
-                  </div>
+                  <div className="mt-4 mb-2 px-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">Quản lý Team</div>
+                  <NavItem view="team-management" icon={UserCog} label="Quản lý Team" onClick={closeMobileMenu} />
+                </>
+              )}
+
+              <NavItem view="history" icon={History} label="Lịch sử" onClick={closeMobileMenu} />
+
+              {/* Duyệt */}
+              {(canManage || isAnyAdmin) && (
+                <>
+                  <div className="mt-4 mb-2 px-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">Duyệt</div>
+                  <NavItem view="shift-approval" icon={ClipboardCheck} label="Duyệt đăng ký ca" onClick={closeMobileMenu} />
+                  <NavItem view="admin-forgot-checkin-requests" icon={ClipboardCheck} label="Duyệt quên checkin/out" onClick={closeMobileMenu} />
+                </>
+              )}
+
+              {/* Cấp 1: Super Admin - Hệ thống */}
+              {isSuperAdmin && (
+                <>
+                  <div className="mt-4 mb-2 px-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">Hệ thống</div>
+                  <NavItem view="branch-management" icon={Building2} label="Quản lý Chi nhánh" onClick={closeMobileMenu} />
+                  <NavItem view="role-management" icon={Shield} label="Quản lý Vai trò" onClick={closeMobileMenu} />
+                </>
+              )}
+
+              {/* Cấp 2: Branch Admin + Super Admin */}
+              {isAnyAdmin && (
+                <>
+                  <div className="mt-4 mb-2 px-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">Quản lý</div>
                   <NavItem view="department-settings" icon={Building2} label="Quản lý Khối" onClick={closeMobileMenu} />
                   <NavItem view="position-settings" icon={Briefcase} label="Quản lý Vị trí" onClick={closeMobileMenu} />
                   <NavItem view="shift-settings" icon={Settings} label="Cài đặt ca làm" onClick={closeMobileMenu} />
-                  <NavItem view="shift-approval" icon={ClipboardCheck} label="Duyệt đăng ký ca" onClick={closeMobileMenu} />
-                  <NavItem view="staff-schedule" icon={Calendar} label="Lịch làm việc" onClick={closeMobileMenu} />
-                  <NavItem view="staff-management" icon={Users} label="Quản lý nhân viên" onClick={closeMobileMenu} />
-                  <NavItem view="admin-forgot-checkin-requests" icon={ClipboardCheck} label="Duyệt xin quên checkin/out" onClick={closeMobileMenu} />
+                  <NavItem view="staff-schedule" icon={Calendar} label="Lịch làm việc NV" onClick={closeMobileMenu} />
+                  <NavItem view="staff-management" icon={Users} label="Quản lý Nhân viên" onClick={closeMobileMenu} />
                   <NavItem view="settings" icon={Settings} label="Cài đặt IP" onClick={closeMobileMenu} />
                   <NavItem view="app-settings" icon={Settings} label="Cài đặt hệ thống" onClick={closeMobileMenu} />
-                  {(user.roleName === 'super_admin' || user.role?.toLowerCase() === 'super_admin') && (
-                    <NavItem view="role-management" icon={Shield} label="Quản lý Vai trò" onClick={closeMobileMenu} />
-                  )}
                 </>
               )}
             </nav>
@@ -247,7 +310,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, currentView, onN
           <span className="text-[10px] mt-1 font-medium">Tổng quan</span>
         </button>
         
-         {user.role === UserRole.ADMIN ? (
+         {isAnyAdmin ? (
           <>
             <button 
               onClick={() => onNavigate('shift-approval')} 

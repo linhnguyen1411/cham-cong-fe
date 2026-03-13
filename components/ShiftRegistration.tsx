@@ -14,6 +14,8 @@ interface Props {
 
 const WEEKDAYS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 const WEEKDAY_FULL = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ nhật'];
+// wday tương ứng với từng cột trong lịch (dayIdx 0=T2..6=CN)
+const DAY_IDX_TO_WDAY = [1, 2, 3, 4, 5, 6, 0];
 
 const ShiftRegistration: React.FC<Props> = ({ user }) => {
   const [loading, setLoading] = useState(true);
@@ -193,8 +195,6 @@ const ShiftRegistration: React.FC<Props> = ({ user }) => {
     
     const shiftName = availableShifts.find(s => s.id === shiftId)?.name || 'ca';
     
-    console.log('handleRegisterFullWeek called:', { shiftId, shiftName, replace, currentSelected: selectedShifts });
-    
     // Set ca này cho tất cả 7 ngày
     const newSelected = selectedShifts.map((dayShifts, dayIndex) => {
       if (replace) {
@@ -208,8 +208,6 @@ const ShiftRegistration: React.FC<Props> = ({ user }) => {
         return dayShifts;
       }
     });
-    
-    console.log('New selected shifts:', newSelected);
     
     setSelectedShifts(newSelected);
     setError(''); // Clear error
@@ -248,7 +246,6 @@ const ShiftRegistration: React.FC<Props> = ({ user }) => {
           // Validate: Chỉ cho phép đăng ký cho tuần tới (next week)
           // Không cho phép đăng ký cho tuần cũ hoặc quá khứ
           if (date < nextWeekStart) {
-            console.warn('Skipping invalid date (before next week):', formatDateForAPI(date));
             return; // Skip dates before next week
           }
           
@@ -263,28 +260,6 @@ const ShiftRegistration: React.FC<Props> = ({ user }) => {
       });
     });
     
-    // Debug: Log registrations before submit
-    const monday = getNextMonday();
-    const dates = getWeekDates(monday);
-    
-    console.log('Preparing to submit:', {
-      today: formatDateForAPI(today),
-      nextMonday: formatDateForAPI(nextMonday),
-      totalRegistrations: registrations.length,
-      registrations: registrations.map(r => {
-        const dayIndex = dates.findIndex(d => formatDateForAPI(d) === r.workDate);
-        const dateObj = new Date(r.workDate + 'T00:00:00');
-        return {
-          date: r.workDate,
-          shiftId: r.workShiftId,
-          dayName: dayIndex >= 0 ? WEEKDAY_FULL[dayIndex] : 'Unknown',
-          dayIndex: dayIndex,
-          isPast: dateObj < today,
-          isNextWeek: dateObj >= nextMonday
-        };
-      })
-    });
-    
     if (registrations.length === 0) {
       setError('Vui lòng chọn ít nhất 1 ca làm việc');
       return;
@@ -295,11 +270,7 @@ const ShiftRegistration: React.FC<Props> = ({ user }) => {
       
       // Backend sẽ xử lý xóa và tạo trong transaction (all-or-nothing)
       // Không cần xóa ở frontend nữa
-      console.log('Submitting registrations:', registrations);
-      
       const result = await bulkCreateShiftRegistrations(user.id, registrations);
-      
-      console.log('Registration result:', result);
       
       // Check for validation errors (from validate_bulk_registration)
       // These are returned when validation fails before creating any registrations
@@ -402,6 +373,16 @@ const ShiftRegistration: React.FC<Props> = ({ user }) => {
     return registrations.filter(r => r.workDate === date);
   };
 
+  // Ngày làm việc của khối (wday). Nếu không có thì mặc định T2-T6 = [1,2,3,4,5]
+  const deptWorkDays: number[] = user.departmentWorkDays?.length
+    ? user.departmentWorkDays
+    : [1, 2, 3, 4, 5];
+
+  const isDayWorking = (dayIdx: number): boolean => {
+    const wday = DAY_IDX_TO_WDAY[dayIdx];
+    return deptWorkDays.includes(wday);
+  };
+
   const getTotalSelectedCount = () => {
     return selectedShifts.reduce((total, day) => total + day.length, 0);
   };
@@ -423,7 +404,18 @@ const ShiftRegistration: React.FC<Props> = ({ user }) => {
         </div>
         <div>
           <h1 className="text-xl md:text-2xl font-bold text-gray-900">Đăng ký Ca làm việc</h1>
-          <p className="text-xs md:text-sm text-gray-500">Có thể đăng ký nhiều ca trong 1 ngày</p>
+          <div className="flex flex-wrap gap-2 mt-0.5">
+            {user.departmentName && (
+              <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+                Khối: {user.departmentName}
+              </span>
+            )}
+            {user.positionName && (
+              <span className="text-xs text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
+                Vị trí: {user.positionName}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -504,7 +496,6 @@ const ShiftRegistration: React.FC<Props> = ({ user }) => {
               <button
                 key={shift.id}
                 onClick={() => {
-                  console.log('Registering full week for shift:', shift.id, shift.name);
                   handleRegisterFullWeek(shift.id, false);
                 }}
                 className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-600 text-white text-xs rounded-lg hover:bg-indigo-700 transition-colors"
@@ -526,26 +517,34 @@ const ShiftRegistration: React.FC<Props> = ({ user }) => {
           const hasApprovedRegs = dayRegs.some(r => r.status === ShiftRegistrationStatus.APPROVED);
           const selectedForDay = selectedShifts[dayIdx] || [];
           const isToday = date.toDateString() === new Date().toDateString();
+          const isWorkingDay = isDayWorking(dayIdx);
           
           return (
             <div
               key={dayIdx}
-              className={`bg-white rounded-xl p-4 shadow-sm border ${isToday ? 'border-indigo-300 bg-indigo-50' : ''}`}
+              className={`rounded-xl p-4 shadow-sm border ${
+                !isWorkingDay
+                  ? 'bg-gray-50 border-gray-200 opacity-60'
+                  : isToday
+                    ? 'bg-indigo-50 border-indigo-300'
+                    : 'bg-white'
+              }`}
             >
               <div className="flex items-center justify-between mb-3">
                 <div>
-                  <div className="font-bold text-gray-900">{WEEKDAY_FULL[dayIdx]}</div>
+                  <div className={`font-bold ${isWorkingDay ? 'text-gray-900' : 'text-gray-400'}`}>{WEEKDAY_FULL[dayIdx]}</div>
                   <div className="text-sm text-gray-500">{formatDate(date)}</div>
                 </div>
-                {selectedForDay.length > 0 && (
+                {isWorkingDay && selectedForDay.length > 0 && (
                   <span className="px-2 py-1 bg-indigo-100 text-indigo-700 text-xs rounded-full font-medium">
                     {selectedForDay.length} ca
                   </span>
                 )}
               </div>
-              
-              {/* Hiển thị tất cả các ca dưới dạng buttons với màu theo trạng thái */}
-              {isViewingNext && canRegisterNextWeek ? (
+
+              {!isWorkingDay ? (
+                <div className="text-center text-gray-400 text-xs py-2">Nghỉ</div>
+              ) : isViewingNext && canRegisterNextWeek ? (
                 <div className="grid grid-cols-2 gap-2">
                   {availableShifts.map((shift) => {
                     // Tìm registration cho ca này
@@ -602,17 +601,27 @@ const ShiftRegistration: React.FC<Props> = ({ user }) => {
           {WEEKDAYS.map((day, idx) => {
             const date = weekDates[idx];
             const isToday = date.toDateString() === new Date().toDateString();
+            const isWorkingDay = isDayWorking(idx);
             return (
               <div
                 key={day}
-                className={`p-3 text-center border-r last:border-r-0 ${isToday ? 'bg-indigo-50' : ''}`}
+                className={`p-3 text-center border-r last:border-r-0 ${
+                  !isWorkingDay ? 'bg-gray-100' : isToday ? 'bg-indigo-50' : ''
+                }`}
               >
-                <div className={`text-sm font-medium ${isToday ? 'text-indigo-600' : 'text-gray-600'}`}>
+                <div className={`text-sm font-medium ${
+                  !isWorkingDay ? 'text-gray-400' : isToday ? 'text-indigo-600' : 'text-gray-600'
+                }`}>
                   {day}
                 </div>
-                <div className={`text-lg font-bold ${isToday ? 'text-indigo-600' : 'text-gray-900'}`}>
+                <div className={`text-lg font-bold ${
+                  !isWorkingDay ? 'text-gray-300' : isToday ? 'text-indigo-600' : 'text-gray-900'
+                }`}>
                   {date.getDate()}
                 </div>
+                {!isWorkingDay && (
+                  <div className="text-[10px] text-gray-400 mt-0.5">Nghỉ</div>
+                )}
               </div>
             );
           })}
@@ -625,14 +634,16 @@ const ShiftRegistration: React.FC<Props> = ({ user }) => {
             const isViewingNext = viewingWeek === 'next';
             const hasApprovedRegs = dayRegs.some(r => r.status === ShiftRegistrationStatus.APPROVED);
             const selectedForDay = selectedShifts[dayIdx] || [];
+            const isWorkingDay = isDayWorking(dayIdx);
             
             return (
               <div
                 key={dayIdx}
-                className="p-2 border-r last:border-r-0 border-b"
+                className={`p-2 border-r last:border-r-0 border-b min-h-[60px] ${!isWorkingDay ? 'bg-gray-50' : ''}`}
               >
-                {/* Hiển thị tất cả các ca dưới dạng buttons với màu theo trạng thái */}
-                {isViewingNext && canRegisterNextWeek ? (
+                {!isWorkingDay ? (
+                  <div className="flex items-center justify-center h-full text-gray-300 text-xs py-4">Nghỉ</div>
+                ) : isViewingNext && canRegisterNextWeek ? (
                   <div className="space-y-1">
                     {availableShifts.map((shift) => {
                       // Tìm registration cho ca này

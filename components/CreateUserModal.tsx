@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { X, Loader } from 'lucide-react';
+import { X, Loader, Building2 } from 'lucide-react';
 import { createUser, getBranches, getDepartments, getPositions, getRoles } from '../services/api';
-import { Branch, Department, Position, WorkScheduleType, Role } from '../types';
+import { Branch, Department, Position, Role, UserRole } from '../types';
+import { usePermissions } from '../hooks/usePermissions';
 
 interface CreateUserModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  currentUser?: any;
 }
 
-export const CreateUserModal: React.FC<CreateUserModalProps> = ({ isOpen, onClose, onSuccess }) => {
+export const CreateUserModal: React.FC<CreateUserModalProps> = ({ isOpen, onClose, onSuccess, currentUser }) => {
   const [formData, setFormData] = useState({
     username: '',
     password: '',
@@ -20,7 +22,6 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({ isOpen, onClos
     branchId: '',
     departmentId: '',
     positionId: '',
-    workScheduleType: WorkScheduleType.BOTH_SHIFTS,
     workAddress: ''
   });
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -31,6 +32,15 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({ isOpen, onClos
   const [loadingData, setLoadingData] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [passwordMismatch, setPasswordMismatch] = useState(false);
+  const perms = usePermissions(currentUser ?? { id: '', username: '', fullName: '', role: UserRole.STAFF });
+  const isSuperAdmin = perms.isSuperAdmin;
+  const isBranchAdmin = perms.isBranchAdmin;
+  const isDeptManagerOnly = currentUser?.isDepartmentManager && currentUser?.role !== UserRole.ADMIN;
+  const isPositionManagerOnly = currentUser?.isPositionManager && currentUser?.role !== UserRole.ADMIN;
+
+  // Chi nhánh mặc định của người tạo (branch_admin dùng chi nhánh đầu tiên họ quản lý)
+  const creatorBranchId = perms.myBranchId;
+  const creatorBranchName = perms.myBranchName || 'Chi nhánh của bạn';
 
   useEffect(() => {
     if (isOpen) {
@@ -41,20 +51,79 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({ isOpen, onClos
   const loadData = async () => {
     setLoadingData(true);
     try {
-      const [branchesData, departmentsData, positionsData, rolesData] = await Promise.all([
-        getBranches(),
+      // Super admin: load tat ca branches de chon
+      // Non-super-admin: khong can load branches, tu dong dung chi nhanh cua nguoi tao
+      const apiCalls: Promise<any>[] = [
         getDepartments(),
         getPositions(),
-        getRoles()
-      ]);
+        getRoles(),
+      ];
+      if (isSuperAdmin) {
+        apiCalls.unshift(getBranches());
+      }
+
+      const results = await Promise.all(apiCalls);
+      const branchesData: Branch[] = isSuperAdmin ? results[0] : [];
+      const departmentsData = isSuperAdmin ? results[1] : results[0];
+      const positionsData   = isSuperAdmin ? results[2] : results[1];
+      const rolesData       = isSuperAdmin ? results[3] : results[2];
+
+      // Loc vai tro theo phan cap
+      const safeRoles = isSuperAdmin
+        ? rolesData
+        : isBranchAdmin
+          ? rolesData.filter((r: Role) => r.name === 'department_head' || r.name === 'position_manager' || r.name === 'staff')
+          : rolesData.filter((r: Role) => r.name === 'staff');
+
+      const managedDepartmentIds: string[] = Array.isArray(currentUser?.managedDepartmentIds) ? currentUser.managedDepartmentIds : [];
+      const managedPositionIds: string[] = Array.isArray(currentUser?.managedPositionIds) ? currentUser.managedPositionIds : [];
+
+      // Filter departments theo pham vi quan ly
+      const filteredPositions =
+        (isPositionManagerOnly && managedPositionIds.length > 0)
+          ? positionsData.filter((p: Position) => managedPositionIds.includes(p.id))
+          : (isDeptManagerOnly && managedDepartmentIds.length > 0)
+            ? positionsData.filter((p: Position) => !p.departmentId || managedDepartmentIds.includes(p.departmentId))
+            : positionsData;
+
+      const deptIdsFromManagedPositions = Array.from(new Set(filteredPositions.map((p: Position) => p.departmentId).filter(Boolean))) as string[];
+      const filteredDepartments =
+        (isPositionManagerOnly && deptIdsFromManagedPositions.length > 0)
+          ? departmentsData.filter((d: Department) => deptIdsFromManagedPositions.includes(d.id))
+          : (isDeptManagerOnly && managedDepartmentIds.length > 0)
+            ? departmentsData.filter((d: Department) => managedDepartmentIds.includes(d.id))
+            : departmentsData;
+
       setBranches(branchesData);
-      setDepartments(departmentsData);
-      setPositions(positionsData);
-      setRoles(rolesData);
-      // Set default role to 'staff' if available
-      const staffRole = rolesData.find(r => r.name === 'staff');
-      if (staffRole) {
-        setFormData(prev => ({ ...prev, roleId: staffRole.id }));
+      setDepartments(filteredDepartments);
+      setPositions(filteredPositions);
+      setRoles(safeRoles);
+
+      const staffRole = safeRoles.find((r: Role) => r.name === 'staff');
+
+      // Pre-fill branchId: super admin de trong de chon, con lai dung chi nhanh nguoi tao
+      const defaultBranchId = isSuperAdmin ? '' : creatorBranchId;
+
+      setFormData(prev => ({
+        ...prev,
+        roleId: staffRole?.id || prev.roleId,
+        branchId: prev.branchId || defaultBranchId,
+      }));
+
+      if (isDeptManagerOnly && filteredDepartments.length > 0) {
+        setFormData(prev => ({ ...prev, departmentId: prev.departmentId || filteredDepartments[0].id }));
+      }
+
+      if (isPositionManagerOnly && filteredPositions.length > 0) {
+        const defaultPos = filteredPositions[0];
+        setFormData(prev => ({
+          ...prev,
+          role: 'staff',
+          roleId: staffRole?.id || prev.roleId,
+          positionId: prev.positionId || defaultPos.id,
+          departmentId: defaultPos.departmentId || prev.departmentId,
+          branchId: defaultPos.branchId || prev.branchId || defaultBranchId,
+        }));
       }
     } catch (err) {
       console.error('Error loading data:', err);
@@ -121,7 +190,6 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({ isOpen, onClos
         branchId: formData.branchId || undefined,
         departmentId: formData.departmentId || undefined,
         positionId: formData.positionId || undefined,
-        workScheduleType: formData.workScheduleType,
         workAddress: formData.workAddress || undefined
       });
       const staffRole = roles.find(r => r.name === 'staff');
@@ -132,10 +200,9 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({ isOpen, onClos
         fullName: '',
         role: 'staff',
         roleId: staffRole?.id || '',
-        branchId: '',
+        branchId: isSuperAdmin ? '' : creatorBranchId,
         departmentId: '',
         positionId: '',
-        workScheduleType: WorkScheduleType.BOTH_SHIFTS,
         workAddress: ''
       });
       onSuccess();
@@ -238,65 +305,103 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({ isOpen, onClos
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Vai Trò
             </label>
-            <select
-              name="roleId"
-              value={formData.roleId}
-              onChange={(e) => {
-                setFormData(prev => ({ ...prev, roleId: e.target.value }));
-                const selectedRole = roles.find(r => r.id === e.target.value);
-                if (selectedRole) {
-                  setFormData(prev => ({ ...prev, role: selectedRole.name === 'admin' ? 'admin' : 'staff' }));
-                }
-              }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              disabled={loading || loadingData}
-              required
-            >
-              <option value="">-- Chọn vai trò --</option>
-              {roles.map(role => (
-                <option key={role.id} value={role.id}>
-                  {role.name} {role.isSystem && '(Hệ thống)'}
-                </option>
-              ))}
-            </select>
+            {(isDeptManagerOnly || isPositionManagerOnly) ? (
+              <div className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-700">
+                staff
+              </div>
+            ) : (
+              <select
+                name="roleId"
+                value={formData.roleId}
+                onChange={(e) => {
+                  const selectedRole = roles.find(r => r.id === e.target.value);
+                  const adminRoles = ['admin', 'super_admin', 'branch_admin'];
+                  const legacyRole = (selectedRole && (adminRoles.includes(selectedRole.name) || selectedRole.isSuperAdmin))
+                    ? 'admin'
+                    : 'staff';
+                  setFormData(prev => ({ ...prev, roleId: e.target.value, role: legacyRole }));
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={loading || loadingData}
+                required
+              >
+                <option value="">-- Chọn vai trò --</option>
+                {roles.map(role => {
+                  const roleLabel: Record<string, string> = {
+                    super_admin: 'Quản trị hệ thống',
+                    branch_admin: 'Admin Chi nhánh',
+                    department_head: 'Quản lý khối',
+                    position_manager: 'Quản lý vị trí',
+                    staff: 'Nhân viên',
+                    department_manager: 'Trưởng bộ phận (cũ)',
+                    admin: 'Admin (cũ)',
+                  };
+                  return (
+                    <option key={role.id} value={role.id}>
+                      {roleLabel[role.name] || role.name} {role.isSystem && ''}
+                    </option>
+                  );
+                })}
+              </select>
+            )}
           </div>
 
           {(formData.role === 'staff' || !formData.roleId || roles.find(r => r.id === formData.roleId)?.name === 'staff') && (
             <>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+                  <Building2 size={14} className="text-blue-500" />
                   Chi Nhánh
                 </label>
-                <select
-                  name="branchId"
-                  value={formData.branchId}
-                  onChange={handleInputChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  disabled={loading || loadingData}
-                >
-                  <option value="">-- Chọn chi nhánh --</option>
-                  {branches.map(branch => (
-                    <option key={branch.id} value={branch.id}>{branch.name}</option>
-                  ))}
-                </select>
+                {isSuperAdmin ? (
+                  // Super Admin: chon bat ky chi nhanh
+                  <select
+                    name="branchId"
+                    value={formData.branchId}
+                    onChange={handleInputChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    disabled={loading || loadingData}
+                  >
+                    <option value="">-- Chọn chi nhánh --</option>
+                    {branches.map(branch => (
+                      <option key={branch.id} value={branch.id}>{branch.name}</option>
+                    ))}
+                  </select>
+                ) : isPositionManagerOnly ? (
+                  <div className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-500 text-sm">
+                    Tự động theo vị trí
+                  </div>
+                ) : (
+                  // Branch Admin & others: hien thi chi nhanh cua nguoi tao (read-only)
+                  <div className="w-full px-3 py-2 border border-blue-100 rounded-md bg-blue-50 text-gray-800 text-sm flex items-center justify-between">
+                    <span>{creatorBranchName}</span>
+                    <span className="text-xs text-blue-400 ml-2">Tự động</span>
+                  </div>
+                )}
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Khối/Phòng Ban
                 </label>
-                <select
-                  name="departmentId"
-                  value={formData.departmentId}
-                  onChange={handleInputChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  disabled={loading || loadingData}
-                >
-                  <option value="">-- Chọn khối/phòng ban --</option>
-                  {departments.map(dept => (
-                    <option key={dept.id} value={dept.id}>{dept.name}</option>
-                  ))}
-                </select>
+                {isPositionManagerOnly ? (
+                  <div className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-700">
+                    Tự động theo vị trí
+                  </div>
+                ) : (
+                  <select
+                    name="departmentId"
+                    value={formData.departmentId}
+                    onChange={handleInputChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    disabled={loading || loadingData}
+                  >
+                    <option value="">-- Chọn khối/phòng ban --</option>
+                    {departments.map(dept => (
+                      <option key={dept.id} value={dept.id}>{dept.name}</option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <div>
@@ -313,8 +418,8 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({ isOpen, onClos
                   <option value="">-- Chọn vị trí --</option>
                   {positions
                     .filter(pos => 
-                      (!formData.branchId || pos.branchId === formData.branchId) &&
-                      (!formData.departmentId || pos.departmentId === formData.departmentId)
+                      (isPositionManagerOnly || !formData.branchId || pos.branchId === formData.branchId) &&
+                      (isPositionManagerOnly || !formData.departmentId || pos.departmentId === formData.departmentId)
                     )
                     .map(position => (
                       <option key={position.id} value={position.id}>{position.name}</option>
@@ -325,26 +430,6 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({ isOpen, onClos
                 ).length === 0 && (
                   <p className="text-amber-600 text-sm mt-1">Không có vị trí nào cho chi nhánh và khối đã chọn</p>
                 )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Loại Lịch Làm Việc
-                </label>
-                <select
-                  name="workScheduleType"
-                  value={formData.workScheduleType}
-                  onChange={handleInputChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  disabled={loading}
-                >
-                  <option value={WorkScheduleType.BOTH_SHIFTS}>Cả ca sáng và ca chiều</option>
-                  <option value={WorkScheduleType.MORNING_ONLY}>Chỉ ca sáng</option>
-                  <option value={WorkScheduleType.AFTERNOON_ONLY}>Chỉ ca chiều</option>
-                </select>
-                <p className="text-gray-500 text-xs mt-1">
-                  Lịch làm việc sẽ được tạo tự động cho tuần hiện tại dựa trên loại lịch này
-                </p>
               </div>
 
               <div>

@@ -8,6 +8,7 @@ export interface Role {
   name: string;
   description?: string;
   isSystem: boolean;
+  isSuperAdmin?: boolean;
   permissionsCount?: number;
   usersCount?: number;
   permissions?: Permission[];
@@ -28,6 +29,9 @@ export interface Branch {
   address: string;
   description?: string;
   usersCount?: number;
+  managerId?: string;
+  managerName?: string;
+  managerUsername?: string;
 }
 
 export interface Department {
@@ -36,6 +40,14 @@ export interface Department {
   description?: string;
   usersCount?: number;
   shiftsCount?: number;
+  managerId?: string;
+  managerName?: string;
+  managerUsername?: string;
+  ipAddress?: string;
+  branchId?: string;
+  branchName?: string;
+  /** Ngày làm việc trong tuần: wday Ruby (0=CN,1=T2,2=T3,3=T4,4=T5,5=T6,6=T7) */
+  workDays?: number[];
 }
 
 export interface Position {
@@ -48,6 +60,9 @@ export interface Position {
   departmentName?: string;
   level: PositionLevel;
   usersCount?: number;
+  managerId?: string;
+  managerName?: string;
+  managerUsername?: string;
 }
 
 export enum PositionLevel {
@@ -78,6 +93,23 @@ export interface ShiftRegistration {
   createdAt?: string;
 }
 
+export interface ShiftRegistrationDeletionAudit {
+  id: string;
+  createdAt: string;
+  weekStart?: string;
+  workDate?: string;
+  source?: string;
+  reason?: string;
+  actorId?: string;
+  actorName?: string;
+  targetUserId?: string;
+  targetUserName?: string;
+  workShiftId?: string;
+  workShiftName?: string;
+  previousStatus?: string;
+  metadata?: any;
+}
+
 export enum ShiftRegistrationStatus {
   PENDING = 'pending',
   APPROVED = 'approved',
@@ -102,6 +134,21 @@ export interface User {
   role: UserRole; // Legacy field for backward compatibility
   roleId?: string;
   roleName?: string;
+  isPositionManager?: boolean;
+  isDepartmentManager?: boolean;
+  isBranchManager?: boolean;
+  canManageTeam?: boolean;
+  // Role hierarchy flags (Cap 1-4)
+  isSuperAdmin?: boolean;
+  isBranchAdmin?: boolean;
+  isDepartmentHead?: boolean;
+  isPositionManagerRole?: boolean;
+  managedDepartmentIds?: string[];
+  managedDepartmentNames?: string[];
+  managedPositionIds?: string[];
+  managedPositionNames?: string[];
+  managedBranchIds?: string[];
+  managedBranchNames?: string[];
   avatar?: string;
   status?: UserStatus;
   branchId?: string;
@@ -109,6 +156,8 @@ export interface User {
   branchAddress?: string;
   departmentId?: string;
   departmentName?: string;
+  /** Ngày làm việc trong tuần của khối (wday: 0=CN,1=T2..6=T7) */
+  departmentWorkDays?: number[];
   positionId?: string;
   positionName?: string;
   positionLevel?: PositionLevel;
@@ -117,6 +166,8 @@ export interface User {
   phone?: string;
   birthday?: string;
   workScheduleType?: WorkScheduleType;
+  /** RBAC permission keys returned by backend, format: "resource:action" */
+  permissions?: string[];
 }
 
 export interface WorkSession {

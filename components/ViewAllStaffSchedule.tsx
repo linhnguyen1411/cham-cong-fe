@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Users, Loader2, Phone, X as XIcon, Plus, Printer, ChevronLeft, ChevronRight } from 'lucide-react';
-import { User, ShiftRegistration, Position, UserRole as UserRoleEnum, UserStatus } from '../types';
+import { User, ShiftRegistration, ShiftRegistrationDeletionAudit, Position, UserRole as UserRoleEnum, UserStatus } from '../types';
+import { usePermissions } from '../hooks/usePermissions';
 import { 
   getShiftRegistrations, 
   getWorkShifts, 
   getUsers, 
   getPositions,
   adminQuickAddShiftRegistration,
-  adminQuickDeleteShiftRegistration
+  adminQuickDeleteShiftRegistration,
+  getShiftRegistrationDeletionHistory
 } from '../services/api';
 
 interface Props {
@@ -38,6 +40,10 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
     }>;
   } | null>(null);
   const [selectedWeek, setSelectedWeek] = useState<string>('');
+  const [showDeletionHistory, setShowDeletionHistory] = useState(false);
+  const [deletionHistory, setDeletionHistory] = useState<ShiftRegistrationDeletionAudit[]>([]);
+  const [loadingDeletionHistory, setLoadingDeletionHistory] = useState(false);
+  const [deletionSearch, setDeletionSearch] = useState('');
   const [addingUser, setAddingUser] = useState<string | null>(null);
   const [deletingUser, setDeletingUser] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -46,7 +52,10 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
     shiftId: '',
     date: ''
   });
-  const isAdmin = user.role === UserRoleEnum.ADMIN;
+  const { isSuperAdmin, isBranchAdmin, isAdmin, managesDepts, managesPositions } = usePermissions(user);
+  const isDepartmentManager = managesDepts;
+  const isPositionManager = managesPositions;
+  const canViewAllPositions = isSuperAdmin || isBranchAdmin;
 
   useEffect(() => {
     // Initialize with current week
@@ -101,6 +110,21 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
       setError(err.message || 'Không thể tải dữ liệu');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const openDeletionHistory = async () => {
+    if (!selectedWeek) return;
+    setShowDeletionHistory(true);
+    setLoadingDeletionHistory(true);
+    setDeletionSearch('');
+    try {
+      const audits = await getShiftRegistrationDeletionHistory(selectedWeek);
+      setDeletionHistory(audits);
+    } catch (err: any) {
+      setError(err.message || 'Không thể tải lịch sử xoá');
+    } finally {
+      setLoadingDeletionHistory(false);
     }
   };
 
@@ -215,9 +239,24 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
     return 10;
   };
   
+  const getVisiblePositions = (): Position[] => {
+    if (canViewAllPositions) return positions;
+    if (isDepartmentManager && user.managedDepartmentIds) {
+      // Department manager: chỉ vị trí trong khối mình quản lý
+      return positions.filter(p => p.departmentId && user.managedDepartmentIds!.includes(p.departmentId));
+    }
+    if (isPositionManager && user.managedPositionIds) {
+      // Position manager: chỉ vị trí mình quản lý
+      return positions.filter(p => user.managedPositionIds!.includes(p.id));
+    }
+    // Staff: không có vị trí quản lý, không cần hiển thị grid
+    return positions;
+  };
+
   const getAllPositionsWithNull = (): Array<Position & { id: string; name: string }> => {
     const activeStaff = getActiveStaff();
-    const result: Array<Position & { id: string; name: string }> = [...positions];
+    const visiblePositions = getVisiblePositions();
+    const result: Array<Position & { id: string; name: string }> = [...visiblePositions];
     
     const usersWithoutPosition = activeStaff.filter(u => !u.positionId);
     if (usersWithoutPosition.length > 0) {
@@ -273,6 +312,8 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
     if (!confirm(`Bạn có chắc chắn muốn xóa ${userName} khỏi ${shiftName} - ${dateLabel}?`)) {
       return;
     }
+
+    const reason = prompt('Lý do xoá (tuỳ chọn):') || undefined;
     
     setDeletingUser(`${userId}-${shiftId}-${dateStr}`);
     setError('');
@@ -281,7 +322,8 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
       await adminQuickDeleteShiftRegistration({
         userId,
         workShiftId: shiftId,
-        workDate: dateStr
+        workDate: dateStr,
+        reason
       });
       await loadData();
       
@@ -481,12 +523,22 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
                 <div className="font-semibold text-gray-900 print-week-info">
                   Tuần từ {formatDate(weekDates[0])} đến {formatDate(weekDates[6])} {weekDates[0].getFullYear()}
                 </div>
-                <button
-                  onClick={goToCurrentWeek}
-                  className="mt-2 text-xs text-blue-600 hover:text-blue-700 underline no-print"
-                >
-                  Về tuần hiện tại
-                </button>
+                <div className="mt-2 flex items-center justify-center gap-4 no-print">
+                  <button
+                    onClick={goToCurrentWeek}
+                    className="text-xs text-blue-600 hover:text-blue-700 underline"
+                  >
+                    Về tuần hiện tại
+                  </button>
+                  {isAdmin && (
+                    <button
+                      onClick={openDeletionHistory}
+                      className="text-xs text-slate-600 hover:text-slate-800 underline"
+                    >
+                      Lịch sử xoá
+                    </button>
+                  )}
+                </div>
               </div>
               <button
                 onClick={() => navigateWeek('next')}
@@ -776,6 +828,99 @@ const ViewAllStaffSchedule: React.FC<Props> = ({ user }) => {
                   </div>
                 ))}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Deletion history */}
+      {showDeletionHistory && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowDeletionHistory(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="sticky top-0 bg-white border-b p-4 flex items-center justify-between">
+              <div>
+                <div className="text-lg font-bold text-gray-900">Lịch sử xoá đăng ký ca</div>
+                {selectedWeek && weekDates.length === 7 && (
+                  <div className="text-sm text-gray-500">
+                    Tuần từ {formatDate(weekDates[0])} đến {formatDate(weekDates[6])}
+                  </div>
+                )}
+              </div>
+              <button onClick={() => setShowDeletionHistory(false)} className="p-2 rounded-lg hover:bg-gray-100">
+                <XIcon size={18} className="text-gray-600" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3">
+              <input
+                value={deletionSearch}
+                onChange={(e) => setDeletionSearch(e.target.value)}
+                placeholder="Tìm theo nhân viên / người xoá / ca / ngày..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+
+              {loadingDeletionHistory ? (
+                <div className="flex items-center justify-center py-10 text-gray-500">
+                  <Loader2 className="w-6 h-6 animate-spin mr-2" />
+                  Đang tải lịch sử...
+                </div>
+              ) : (
+                <div className="overflow-x-auto border border-gray-200 rounded-xl">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-gray-50 text-gray-600">
+                      <tr>
+                        <th className="text-left px-3 py-2">Thời gian</th>
+                        <th className="text-left px-3 py-2">Người xoá</th>
+                        <th className="text-left px-3 py-2">Nhân viên</th>
+                        <th className="text-left px-3 py-2">Ca</th>
+                        <th className="text-left px-3 py-2">Ngày</th>
+                        <th className="text-left px-3 py-2">Lý do</th>
+                        <th className="text-left px-3 py-2">Nguồn</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {deletionHistory
+                        .filter((a) => {
+                          if (!deletionSearch) return true;
+                          const q = deletionSearch.toLowerCase();
+                          return (
+                            (a.targetUserName || '').toLowerCase().includes(q) ||
+                            (a.actorName || '').toLowerCase().includes(q) ||
+                            (a.workShiftName || '').toLowerCase().includes(q) ||
+                            (a.workDate || '').toLowerCase().includes(q) ||
+                            (a.reason || '').toLowerCase().includes(q) ||
+                            (a.source || '').toLowerCase().includes(q)
+                          );
+                        })
+                        .map((a) => {
+                          const createdAt = a.createdAt ? new Date(a.createdAt) : null;
+                          const createdAtText =
+                            createdAt && !isNaN(createdAt.getTime())
+                              ? createdAt.toLocaleString('vi-VN')
+                              : (a.createdAt || '');
+                          return (
+                            <tr key={a.id} className="border-t">
+                              <td className="px-3 py-2 whitespace-nowrap">{createdAtText}</td>
+                              <td className="px-3 py-2">{a.actorName || 'N/A'}</td>
+                              <td className="px-3 py-2">{a.targetUserName || 'N/A'}</td>
+                              <td className="px-3 py-2">{a.workShiftName || 'N/A'}</td>
+                              <td className="px-3 py-2 whitespace-nowrap">{a.workDate || 'N/A'}</td>
+                              <td className="px-3 py-2">{a.reason || ''}</td>
+                              <td className="px-3 py-2">{a.source || ''}</td>
+                            </tr>
+                          );
+                        })}
+                      {deletionHistory.length === 0 && (
+                        <tr>
+                          <td className="px-3 py-6 text-center text-gray-500" colSpan={7}>
+                            Chưa có lịch sử xoá cho tuần này.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         </div>

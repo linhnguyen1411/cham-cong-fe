@@ -1,11 +1,20 @@
 import React, { useEffect, useState } from 'react';
-import { WorkShift, Department } from '../types';
+import { WorkShift, Department, Branch, User } from '../types';
 import * as api from '../services/api';
-import { Plus, Edit2, Trash2, Clock, X, Layers } from 'lucide-react';
+import { usePermissions } from '../hooks/usePermissions';
+import { Plus, Edit2, Trash2, Clock, X, Layers, Building2 } from 'lucide-react';
 
-export const ShiftSettings: React.FC = () => {
+interface Props {
+  currentUser: User | null;
+}
+
+export const ShiftSettings: React.FC<Props> = ({ currentUser }) => {
+  const { isSuperAdmin, isBranchAdmin } = usePermissions((currentUser || {}) as User);
+  const mustSelectDept = isSuperAdmin || isBranchAdmin;
+
   const [shifts, setShifts] = useState<WorkShift[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -15,6 +24,7 @@ export const ShiftSettings: React.FC = () => {
     startTime: '08:00',
     endTime: '17:00',
     lateThreshold: 30,
+    branchId: '',
     departmentId: ''
   });
 
@@ -24,12 +34,12 @@ export const ShiftSettings: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
-    const [shiftsData, depsData] = await Promise.all([
-      api.getWorkShifts(),
-      api.getDepartments()
-    ]);
-    setShifts(shiftsData);
-    setDepartments(depsData);
+    const promises: Promise<any>[] = [api.getWorkShifts(), api.getDepartments()];
+    if (isSuperAdmin) promises.push(api.getBranches());
+    const results = await Promise.all(promises);
+    setShifts(results[0]);
+    setDepartments(results[1]);
+    if (isSuperAdmin && results[2]) setBranches(results[2]);
     setLoading(false);
   };
 
@@ -48,6 +58,10 @@ export const ShiftSettings: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!editingId && mustSelectDept && !formData.departmentId) {
+      alert('Vui lòng chọn chi nhánh và khối khi tạo ca làm việc');
+      return;
+    }
     try {
       if (editingId) {
         await api.updateWorkShift(editingId, {
@@ -68,18 +82,20 @@ export const ShiftSettings: React.FC = () => {
       }
       resetForm();
       await loadData();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving shift:', error);
-      alert('Lỗi khi lưu ca làm việc');
+      alert(error?.message || 'Lỗi khi lưu ca làm việc');
     }
   };
 
   const handleEdit = (shift: WorkShift) => {
+    const dep = departments.find(d => d.id === shift.departmentId);
     setFormData({
       name: shift.name,
       startTime: shift.startTime,
       endTime: shift.endTime,
       lateThreshold: shift.lateThreshold,
+      branchId: dep?.branchId || '',
       departmentId: shift.departmentId || ''
     });
     setEditingId(shift.id);
@@ -104,11 +120,16 @@ export const ShiftSettings: React.FC = () => {
       startTime: '08:00',
       endTime: '17:00',
       lateThreshold: 30,
+      branchId: '',
       departmentId: ''
     });
     setEditingId(null);
     setShowForm(false);
   };
+
+  const deptsForForm = formData.branchId
+    ? departments.filter(d => !d.branchId || d.branchId === formData.branchId)
+    : departments;
 
   const getDepartmentName = (departmentId?: string) => {
     if (!departmentId) return 'Chưa phân khối';
@@ -184,18 +205,38 @@ export const ShiftSettings: React.FC = () => {
                   required
                 />
               </div>
+
+              {isSuperAdmin && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1 flex items-center gap-1">
+                    <Building2 size={14} /> Chi nhánh
+                  </label>
+                  <select
+                    value={formData.branchId}
+                    onChange={(e) => setFormData({ ...formData, branchId: e.target.value, departmentId: '' })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">-- Chọn chi nhánh --</option>
+                    {branches.map(b => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Thuộc Khối
+                <label className="block text-sm font-medium text-slate-700 mb-1 flex items-center gap-1">
+                  <Layers size={14} /> Thuộc Khối
+                  {mustSelectDept && !editingId && <span className="text-red-500">*</span>}
                 </label>
                 <select
                   value={formData.departmentId}
                   onChange={(e) => setFormData({ ...formData, departmentId: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required={mustSelectDept && !editingId}
                 >
-                  <option value="">Chưa phân khối</option>
-                  {departments.map(d => (
+                  <option value="">{isSuperAdmin ? '-- Chọn khối --' : 'Chưa phân khối'}</option>
+                  {deptsForForm.map(d => (
                     <option key={d.id} value={d.id}>{d.name}</option>
                   ))}
                 </select>

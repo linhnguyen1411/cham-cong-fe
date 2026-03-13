@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { WorkSession, FilterType, User, UserRole, ForgotCheckinRequest } from '../types';
 import * as api from '../services/api';
-import { Calendar, Filter, Download, Eye } from 'lucide-react';
+import { usePermissions } from '../hooks/usePermissions';
+import { Calendar, Filter, Download, Eye, Edit2, X, Save } from 'lucide-react';
 import { MotivationQuote } from './MotivationQuote';
 import { CheckoutReportDetail } from './CheckoutReportDetail';
 import * as XLSX from 'xlsx';
@@ -11,6 +12,7 @@ interface HistoryProps {
 }
 
 export const History: React.FC<HistoryProps> = ({ user }) => {
+  const { isSuperAdmin: histIsSuperAdmin, isAdmin: histIsAdmin, canManageTeam: histCanManage } = usePermissions(user);
   const [sessions, setSessions] = useState<WorkSession[]>([]);
   const [filter, setFilter] = useState<FilterType>(FilterType.WEEK);
   const [loading, setLoading] = useState(true);
@@ -18,18 +20,67 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
   const [showDetail, setShowDetail] = useState(false);
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
+  const [selectedUserId, setSelectedUserId] = useState<string>(
+    histIsAdmin ? 'all' : user.id
+  );
+  const [availableUsers, setAvailableUsers] = useState<User[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [userSearchTerm, setUserSearchTerm] = useState<string>('');
+  const [editingSession, setEditingSession] = useState<WorkSession | null>(null);
+  const [editForm, setEditForm] = useState({
+    startTime: '',
+    endTime: '',
+    workSummary: '',
+    challenges: '',
+    suggestions: '',
+    notes: ''
+  });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    loadAvailableUsers();
+  }, [user]);
 
   useEffect(() => {
     loadData();
-  }, [user]);
+  }, [user, selectedUserId]);
+
+  const loadAvailableUsers = async () => {
+    // Chỉ load users cho admin và manager
+    if (histIsAdmin || histCanManage) {
+      setLoadingUsers(true);
+      try {
+        let users: User[] = [];
+        if (histIsAdmin) {
+          // Admin/Super Admin: load tất cả users
+          users = await api.getUsers();
+        } else if (histCanManage) {
+          // Manager: load users trong team
+          users = await api.getMyTeam();
+        }
+        // Sắp xếp theo tên
+        users.sort((a, b) => a.fullName.localeCompare(b.fullName, 'vi'));
+        setAvailableUsers(users);
+      } catch (err) {
+        // Error loading users
+      } finally {
+        setLoadingUsers(false);
+      }
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
     let data: WorkSession[] = [];
-    if (user.role === UserRole.ADMIN) {
-        data = await api.getAllHistory();
+    if (selectedUserId === 'all' || selectedUserId === '') {
+      // Admin/Manager: Xem tất cả (load từ getAllHistory hoặc không filter user_id)
+      data = await api.getAllHistory();
+    } else if (selectedUserId === user.id) {
+      // Xem của chính mình
+      data = await api.getUserHistory(user.id);
     } else {
-        data = await api.getUserHistory(user.id);
+      // Xem của user khác
+      data = await api.getUserHistory(selectedUserId);
     }
     setSessions(data);
     setLoading(false);
@@ -44,46 +95,60 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
     // If dateFrom is selected, use date range logic
     if (dateFrom) {
       return sessions.filter(session => {
-        const sessionDate = new Date(session.startTime);
-        sessionDate.setHours(0,0,0,0);
-        
-        const fromDate = new Date(dateFrom);
-        fromDate.setHours(0,0,0,0);
-        
-        if (dateTo) {
-          // Both start and end selected: filter by range
-          const toDate = new Date(dateTo);
-          toDate.setHours(23,59,59,999);
-          return sessionDate >= fromDate && sessionDate <= toDate;
-        } else {
-          // Only start selected: from start to now
-          return sessionDate >= fromDate && sessionDate <= now;
+        try {
+          if (!session.startTime || isNaN(session.startTime)) return false;
+          const sessionDate = new Date(session.startTime);
+          if (isNaN(sessionDate.getTime())) return false;
+          sessionDate.setHours(0,0,0,0);
+          
+          const fromDate = new Date(dateFrom);
+          if (isNaN(fromDate.getTime())) return false;
+          fromDate.setHours(0,0,0,0);
+          
+          if (dateTo) {
+            // Both start and end selected: filter by range
+            const toDate = new Date(dateTo);
+            if (isNaN(toDate.getTime())) return false;
+            toDate.setHours(23,59,59,999);
+            return sessionDate >= fromDate && sessionDate <= toDate;
+          } else {
+            // Only start selected: from start to now
+            return sessionDate >= fromDate && sessionDate <= now;
+          }
+        } catch (e) {
+          return false;
         }
       });
     }
     
     // No date picker: use filter selection
     return sessions.filter(session => {
-      const sessionDate = new Date(session.startTime);
-      sessionDate.setHours(0,0,0,0);
+      try {
+        if (!session.startTime || isNaN(session.startTime)) return false;
+        const sessionDate = new Date(session.startTime);
+        if (isNaN(sessionDate.getTime())) return false;
+        sessionDate.setHours(0,0,0,0);
       
-      switch (filter) {
-        case FilterType.TODAY:
-          return sessionDate.getTime() === now.getTime();
-        case FilterType.WEEK:
-          const oneWeekAgo = new Date(now);
-          oneWeekAgo.setDate(now.getDate() - 7);
-          return sessionDate >= oneWeekAgo;
-        case FilterType.MONTH:
-          const oneMonthAgo = new Date(now);
-          oneMonthAgo.setMonth(now.getMonth() - 1);
-          return sessionDate >= oneMonthAgo;
-        case FilterType.THIS_MONTH:
-          const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-          monthStart.setHours(0,0,0,0);
-          return sessionDate >= monthStart;
-        default:
-          return true;
+        switch (filter) {
+          case FilterType.TODAY:
+            return sessionDate.getTime() === now.getTime();
+          case FilterType.WEEK:
+            const oneWeekAgo = new Date(now);
+            oneWeekAgo.setDate(now.getDate() - 7);
+            return sessionDate >= oneWeekAgo;
+          case FilterType.MONTH:
+            const oneMonthAgo = new Date(now);
+            oneMonthAgo.setMonth(now.getMonth() - 1);
+            return sessionDate >= oneMonthAgo;
+          case FilterType.THIS_MONTH:
+            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            monthStart.setHours(0,0,0,0);
+            return sessionDate >= monthStart;
+          default:
+            return true;
+        }
+      } catch (e) {
+        return false;
       }
     });
   };
@@ -128,14 +193,27 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
 
     // Sheet 1: Chi tiết từng ca làm việc
     const detailData = sortedSessions.map(session => {
-      const startDate = new Date(session.startTime);
-      const endDate = session.endTime ? new Date(session.endTime) : null;
+      let startDate: Date | null = null;
+      let endDate: Date | null = null;
+      
+      try {
+        if (session.startTime && !isNaN(session.startTime)) {
+          startDate = new Date(session.startTime);
+          if (isNaN(startDate.getTime())) startDate = null;
+        }
+        if (session.endTime && !isNaN(session.endTime)) {
+          endDate = new Date(session.endTime);
+          if (isNaN(endDate.getTime())) endDate = null;
+        }
+      } catch (e) {
+        // Ignore errors, use null
+      }
       
       return {
-        'Ngày': startDate.toLocaleDateString('vi-VN'),
+        'Ngày': startDate ? startDate.toLocaleDateString('vi-VN') : 'Invalid date',
         'Nhân viên': session.userName || 'N/A',
         'Ca làm việc': session.shiftName || 'N/A',
-        'Giờ vào': startDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+        'Giờ vào': startDate ? startDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '--:--',
         'Giờ ra': endDate ? endDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : 'Chưa checkout',
         'Tổng giờ': session.duration > 0 ? formatDurationHours(session.duration) : 0,
         'Tổng phút': session.duration > 0 ? Math.floor(session.duration / 60) : 0,
@@ -297,10 +375,64 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
       <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-slate-800">Lịch sử chấm công</h2>
-          <p className="text-slate-500 text-sm mt-1">Xem lại hoạt động ra vào của {user.role === UserRole.ADMIN ? 'toàn bộ nhân viên' : 'bạn'}</p>
+          <p className="text-slate-500 text-sm mt-1">
+            {(() => {
+              if (selectedUserId === 'all' || selectedUserId === '') {
+                return 'Xem lại hoạt động ra vào của tất cả nhân viên';
+              } else if (selectedUserId === user.id) {
+                return 'Xem lại hoạt động ra vào của bạn';
+              } else {
+                return `Xem lại hoạt động ra vào của ${availableUsers.find(u => u.id === selectedUserId)?.fullName || 'nhân viên'}`;
+              }
+            })()}
+          </p>
         </div>
         
         <div className="flex flex-col md:flex-row items-start md:items-end gap-3">
+          {/* User selector - chỉ hiển thị cho admin và manager */}
+          {(histIsAdmin || histCanManage) && (
+            <div className="relative">
+              <label className="block text-xs text-gray-600 mb-1">Chọn nhân viên</label>
+              {/* Search input */}
+              <input
+                type="text"
+                value={userSearchTerm}
+                onChange={(e) => setUserSearchTerm(e.target.value)}
+                placeholder="Tìm kiếm nhân viên..."
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white h-[42px] mb-2"
+              />
+              {/* User select */}
+              <select
+                value={selectedUserId}
+                onChange={(e) => setSelectedUserId(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white h-[42px] min-w-[200px]"
+                disabled={loadingUsers}
+              >
+                {histIsAdmin && (
+                  <option value="all">Tất cả nhân viên</option>
+                )}
+                <option value={user.id}>Cá nhân (tôi)</option>
+                {availableUsers
+                  .filter(u => {
+                    // Filter by search term
+                    if (userSearchTerm.trim() === '') return true;
+                    const searchLower = userSearchTerm.toLowerCase();
+                    return (
+                      u.fullName.toLowerCase().includes(searchLower) ||
+                      u.username?.toLowerCase().includes(searchLower) ||
+                      u.positionName?.toLowerCase().includes(searchLower) ||
+                      u.departmentName?.toLowerCase().includes(searchLower)
+                    );
+                  })
+                  .filter(u => u.id !== user.id)
+                  .map(u => (
+                    <option key={u.id} value={u.id}>
+                      {u.fullName} {u.positionName ? `(${u.positionName})` : ''} {u.departmentName ? `- ${u.departmentName}` : ''}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          )}
             <div className="relative">
                 <Filter size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" />
                 <select 
@@ -374,19 +506,32 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
           <thead className="bg-slate-50 text-slate-500 text-xs uppercase font-semibold">
             <tr>
               <th className="px-6 py-4">Ngày</th>
-              {user.role === UserRole.ADMIN && <th className="px-6 py-4">Nhân viên</th>}
+              {(histIsAdmin || histCanManage) && (selectedUserId === 'all' || selectedUserId !== user.id) && (
+                <th className="px-6 py-4">Nhân viên</th>
+              )}
               <th className="px-6 py-4">Bắt đầu</th>
               <th className="px-6 py-4">Kết thúc</th>
               <th className="px-6 py-4">Tổng giờ</th>
               <th className="px-6 py-4">Trạng thái</th>
               <th className="px-6 py-4">Chi tiết</th>
+              {(histIsAdmin || histCanManage) && (
+                <th className="px-6 py-4">Thao tác</th>
+              )}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading ? (
-               <tr><td colSpan={6} className="px-6 py-8 text-center text-slate-400">Đang tải dữ liệu...</td></tr>
+               <tr><td colSpan={(() => {
+                 const showUserColumn = (histIsAdmin || histCanManage) && (selectedUserId === 'all' || selectedUserId !== user.id);
+                 const showActionColumn = histIsAdmin || histCanManage;
+                 return showUserColumn && showActionColumn ? 8 : showUserColumn || showActionColumn ? 7 : 6;
+               })()} className="px-6 py-8 text-center text-slate-400">Đang tải dữ liệu...</td></tr>
             ) : filteredSessions.length === 0 ? (
-               <tr><td colSpan={6} className="px-6 py-8 text-center text-slate-400">Không có dữ liệu trong khoảng thời gian này.</td></tr>
+               <tr><td colSpan={(() => {
+                 const showUserColumn = (histIsAdmin || histCanManage) && (selectedUserId === 'all' || selectedUserId !== user.id);
+                 const showActionColumn = histIsAdmin || histCanManage;
+                 return showUserColumn && showActionColumn ? 8 : showUserColumn || showActionColumn ? 7 : 6;
+               })()} className="px-6 py-8 text-center text-slate-400">Không có dữ liệu trong khoảng thời gian này.</td></tr>
             ) : (
               filteredSessions.map((session) => (
                 <tr 
@@ -403,9 +548,18 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
                     <Calendar size={16} className={`mr-2 ${
                       session.forgotCheckout ? 'text-red-400' : 'text-slate-400'
                     }`} />
-                    {new Date(session.startTime).toLocaleDateString('vi-VN')}
+                    {(() => {
+                      try {
+                        if (!session.startTime || isNaN(session.startTime)) return 'Invalid date';
+                        const date = new Date(session.startTime);
+                        if (isNaN(date.getTime())) return 'Invalid date';
+                        return date.toLocaleDateString('vi-VN');
+                      } catch (e) {
+                        return 'Invalid date';
+                      }
+                    })()}
                   </td>
-                  {user.role === UserRole.ADMIN && (
+                  {(histIsAdmin || histCanManage) && (selectedUserId === 'all' || selectedUserId !== user.id) && (
                       <td className={`px-6 py-4 ${
                         session.forgotCheckout ? 'text-red-600' : 'text-slate-600'
                       }`}>
@@ -415,14 +569,30 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
                   <td className={`px-6 py-4 font-mono text-sm ${
                     session.forgotCheckout ? 'text-red-600' : 'text-slate-600'
                   }`}>
-                    {new Date(session.startTime).toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'})}
+                    {(() => {
+                      try {
+                        if (!session.startTime || isNaN(session.startTime)) return '--:--';
+                        const date = new Date(session.startTime);
+                        if (isNaN(date.getTime())) return '--:--';
+                        return date.toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'});
+                      } catch (e) {
+                        return '--:--';
+                      }
+                    })()}
                   </td>
                   <td className={`px-6 py-4 font-mono text-sm ${
                     session.forgotCheckout ? 'text-red-600' : 'text-slate-600'
                   }`}>
-                    {session.endTime 
-                        ? new Date(session.endTime).toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'}) 
-                        : '--:--'}
+                    {(() => {
+                      try {
+                        if (!session.endTime || isNaN(session.endTime)) return '--:--';
+                        const date = new Date(session.endTime);
+                        if (isNaN(date.getTime())) return '--:--';
+                        return date.toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'});
+                      } catch (e) {
+                        return '--:--';
+                      }
+                    })()}
                   </td>
                   <td className={`px-6 py-4 font-bold ${
                     session.forgotCheckout ? 'text-red-800' : 'text-slate-800'
@@ -458,6 +628,29 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
                       </button>
                     )}
                   </td>
+                  {(histIsAdmin || histCanManage) && (
+                    <td className="px-6 py-4">
+                      <button
+                        onClick={() => {
+                          setEditingSession(session);
+                          const startDate = new Date(session.startTime);
+                          const endDate = session.endTime ? new Date(session.endTime) : null;
+                          setEditForm({
+                            startTime: startDate.toISOString().slice(0, 16),
+                            endTime: endDate ? endDate.toISOString().slice(0, 16) : '',
+                            workSummary: session.workSummary || '',
+                            challenges: session.challenges || '',
+                            suggestions: session.suggestions || '',
+                            notes: session.notes || ''
+                          });
+                        }}
+                        className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-yellow-50 text-yellow-600 hover:bg-yellow-100 transition text-sm font-medium whitespace-nowrap"
+                      >
+                        <Edit2 size={14} />
+                        Sửa
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))
             )}
@@ -476,6 +669,194 @@ export const History: React.FC<HistoryProps> = ({ user }) => {
             setSelectedSession(null);
           }}
         />
+      )}
+
+      {/* Edit Work Session Modal */}
+      {editingSession && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-gradient-to-r from-yellow-500 to-yellow-600 text-white p-6 flex justify-between items-center">
+              <div>
+                <h2 className="text-2xl font-bold">Chỉnh sửa ca làm việc</h2>
+                <p className="text-yellow-100 text-sm mt-1">
+                  {editingSession.userName} - {(() => {
+                    try {
+                      if (!editingSession.startTime || isNaN(editingSession.startTime)) return 'Invalid date';
+                      const date = new Date(editingSession.startTime);
+                      if (isNaN(date.getTime())) return 'Invalid date';
+                      return date.toLocaleDateString('vi-VN');
+                    } catch (e) {
+                      return 'Invalid date';
+                    }
+                  })()}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setEditingSession(null);
+                  setEditForm({
+                    startTime: '',
+                    endTime: '',
+                    workSummary: '',
+                    challenges: '',
+                    suggestions: '',
+                    notes: ''
+                  });
+                }}
+                className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Giờ vào <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="datetime-local"
+                  value={editForm.startTime}
+                  onChange={(e) => setEditForm({ ...editForm, startTime: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Giờ ra</label>
+                <input
+                  type="datetime-local"
+                  value={editForm.endTime}
+                  onChange={(e) => setEditForm({ ...editForm, endTime: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">Để trống nếu chưa checkout</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tóm tắt công việc</label>
+                <textarea
+                  value={editForm.workSummary}
+                  onChange={(e) => setEditForm({ ...editForm, workSummary: e.target.value })}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                  placeholder="Nhập tóm tắt công việc đã làm..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Thách thức</label>
+                <textarea
+                  value={editForm.challenges}
+                  onChange={(e) => setEditForm({ ...editForm, challenges: e.target.value })}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                  placeholder="Nhập các thách thức gặp phải..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Đề xuất</label>
+                <textarea
+                  value={editForm.suggestions}
+                  onChange={(e) => setEditForm({ ...editForm, suggestions: e.target.value })}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                  placeholder="Nhập các đề xuất cải thiện..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Ghi chú</label>
+                <textarea
+                  value={editForm.notes}
+                  onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                  rows={2}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                  placeholder="Nhập ghi chú khác..."
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-gray-200">
+                <button
+                  onClick={async () => {
+                    if (!editForm.startTime) {
+                      alert('Vui lòng nhập giờ vào');
+                      return;
+                    }
+
+                    setSaving(true);
+                    try {
+                      // Validate dates before sending
+                      const startDate = new Date(editForm.startTime);
+                      if (isNaN(startDate.getTime())) {
+                        alert('Giờ vào không hợp lệ');
+                        setSaving(false);
+                        return;
+                      }
+                      
+                      let endTimeISO: string | null = null;
+                      if (editForm.endTime) {
+                        const endDate = new Date(editForm.endTime);
+                        if (!isNaN(endDate.getTime())) {
+                          endTimeISO = endDate.toISOString();
+                        }
+                      }
+                      
+                      await api.adminUpdateWorkSession(editingSession.id, {
+                        startTime: startDate.toISOString(),
+                        endTime: endTimeISO,
+                        workSummary: editForm.workSummary || undefined,
+                        challenges: editForm.challenges || undefined,
+                        suggestions: editForm.suggestions || undefined,
+                        notes: editForm.notes || undefined
+                      });
+                      
+                      await loadData();
+                      setEditingSession(null);
+                      setEditForm({
+                        startTime: '',
+                        endTime: '',
+                        workSummary: '',
+                        challenges: '',
+                        suggestions: '',
+                        notes: ''
+                      });
+                      alert('Đã cập nhật ca làm việc thành công!');
+                    } catch (err: any) {
+                      alert(err.message || 'Có lỗi xảy ra khi cập nhật');
+                    } finally {
+                      setSaving(false);
+                    }
+                  }}
+                  disabled={saving}
+                  className="flex-1 px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  <Save size={16} />
+                  {saving ? 'Đang lưu...' : 'Lưu thay đổi'}
+                </button>
+                <button
+                  onClick={() => {
+                    setEditingSession(null);
+                    setEditForm({
+                      startTime: '',
+                      endTime: '',
+                      workSummary: '',
+                      challenges: '',
+                      suggestions: '',
+                      notes: ''
+                    });
+                  }}
+                  disabled={saving}
+                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Hủy
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

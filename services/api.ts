@@ -1,5 +1,5 @@
 
-import { User, WorkSession, AuthResponse, UserRole, UserStatus, WorkShift, Branch, Department, Position, ShiftRegistration, PositionLevel, ShiftRegistrationStatus, WorkScheduleType, AppSetting, ForgotCheckinRequest, Role, Permission } from '../types';
+import { User, WorkSession, AuthResponse, UserRole, UserStatus, WorkShift, Branch, Department, Position, ShiftRegistration, ShiftRegistrationDeletionAudit, PositionLevel, ShiftRegistrationStatus, WorkScheduleType, AppSetting, ForgotCheckinRequest, Role, Permission } from '../types';
 
 const STORAGE_KEYS = {
   CURRENT_USER: 'timekeep_user'
@@ -18,7 +18,7 @@ const getBaseUrl = () => {
   if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
     return '/api'; // Production: use Nginx proxy
   }
-  return (process.env.REACT_APP_API_URL || 'http://127.0.0.1:3000').replace(/\/$/, '');
+  return (process.env.REACT_APP_API_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
 };
 
 export const BASE_URL = getBaseUrl();
@@ -140,36 +140,111 @@ const fetchAPI = async (endpoint: string, options: RequestInit = {}) => {
 
 // --- DATA MAPPERS ---
 
-const mapUserFromApi = (data: any): User => ({
-  id: String(data.id || data.user_id),
-  username: data.username,
-  fullName: data.full_name || data.fullName || data.username,
-  role: (data.role_name === 'admin' || (data.role && String(data.role).toLowerCase() === 'admin')) ? UserRole.ADMIN : UserRole.STAFF,
-  roleId: data.role_id ? String(data.role_id) : undefined,
-  roleName: data.role_name || undefined,
-  status: data.status ? (data.status === 'deactive' ? UserStatus.DEACTIVE : UserStatus.ACTIVE) : UserStatus.ACTIVE,
-  avatar: data.avatar_url || data.avatar || `https://ui-avatars.com/api/?name=${data.username}&background=random`,
-  branchId: data.branch_id ? String(data.branch_id) : undefined,
-  branchName: data.branch_name || undefined,
-  branchAddress: data.branch_address || undefined,
-  departmentId: data.department_id ? String(data.department_id) : undefined,
-  departmentName: data.department_name || undefined,
-  positionId: data.position_id ? String(data.position_id) : undefined,
-  positionName: data.position_name || undefined,
-  positionLevel: data.position_level || undefined,
-  workAddress: data.work_address || undefined,
-  address: data.address || undefined,
-  phone: data.phone || undefined,
-  birthday: data.birthday || undefined,
-  workScheduleType: data.work_schedule_type as WorkScheduleType || WorkScheduleType.BOTH_SHIFTS
-});
+const mapUserFromApi = (data: any): User => {
+  // Extract role_name from various possible locations in API response
+  // Priority: role_name > role.name > role (if string)
+  let roleName: string | undefined = undefined;
+  if (data.role_name) {
+    roleName = String(data.role_name).trim();
+  } else if (data.role && typeof data.role === 'object' && data.role.name) {
+    roleName = String(data.role.name).trim();
+  } else if (data.role && typeof data.role === 'string') {
+    roleName = String(data.role).trim();
+  }
+  
+  // Determine role based on role_name - IMPORTANT: super_admin should be ADMIN
+  let mappedRole = UserRole.STAFF;
+  
+  // Role hierarchy mapping:
+  // Cap 1: super_admin      → UserRole.ADMIN
+  // Cap 2: branch_admin     → UserRole.ADMIN
+  // Cap 3: department_head  → UserRole.STAFF (but canManageTeam=true)
+  // Cap 4: position_manager → UserRole.STAFF (but canManageTeam=true)
+  // Cap 5: staff            → UserRole.STAFF
+  if (roleName) {
+    const normalizedRoleName = roleName.toLowerCase().trim();
+    if (['admin', 'super_admin', 'branch_admin'].includes(normalizedRoleName)) {
+      mappedRole = UserRole.ADMIN;
+    }
+  }
+  
+  // Legacy check for enum role (0 = admin) - CHỈ dùng khi không có roleName
+  // Tránh trường hợp department_head có legacy role=0 (admin cũ) bị map nhầm sang ADMIN
+  if (!roleName && mappedRole === UserRole.STAFF && (data.role === 0 || data.role === '0')) {
+    mappedRole = UserRole.ADMIN;
+  }
+  
+  // Final safety: nếu roleName là STAFF-level thì KHÔNG được là ADMIN dù legacy=0
+  if (roleName) {
+    const staffLevelRoles = ['staff', 'department_head', 'department_manager', 'position_manager'];
+    if (staffLevelRoles.includes(roleName.toLowerCase().trim())) {
+      mappedRole = UserRole.STAFF;
+    }
+  }
+  
+  const mappedUser = {
+    id: String(data.id || data.user_id),
+    username: data.username,
+    fullName: data.full_name || data.fullName || data.username,
+    role: mappedRole,
+    roleId: data.role_id ? String(data.role_id) : undefined,
+    roleName: roleName || undefined,
+    isPositionManager: data.is_position_manager === true,
+    isDepartmentManager: data.is_department_manager === true,
+    isBranchManager: data.is_branch_manager === true,
+    canManageTeam: data.can_manage_team === true || data.is_position_manager === true || data.is_department_manager === true || data.is_department_head === true || data.is_position_manager_role === true,
+    isBranchAdmin: data.is_branch_admin === true,
+    isDepartmentHead: data.is_department_head === true,
+    isSuperAdmin: data.is_super_admin === true,
+    isPositionManagerRole: data.is_position_manager_role === true,
+    status: data.status ? (data.status === 'deactive' ? UserStatus.DEACTIVE : UserStatus.ACTIVE) : UserStatus.ACTIVE,
+    avatar: data.avatar_url || data.avatar || `https://ui-avatars.com/api/?name=${data.username}&background=random`,
+    branchId: data.branch_id ? String(data.branch_id) : undefined,
+    branchName: data.branch_name || undefined,
+    branchAddress: data.branch_address || undefined,
+    departmentId: data.department_id ? String(data.department_id) : undefined,
+    departmentName: data.department_name || undefined,
+    departmentWorkDays: Array.isArray(data.department_work_days) ? data.department_work_days.map(Number) : undefined,
+    positionId: data.position_id ? String(data.position_id) : undefined,
+    positionName: data.position_name || undefined,
+    positionLevel: data.position_level || undefined,
+    workAddress: data.work_address || undefined,
+    address: data.address || undefined,
+    phone: data.phone || undefined,
+    birthday: data.birthday || undefined,
+    workScheduleType: data.work_schedule_type as WorkScheduleType || WorkScheduleType.BOTH_SHIFTS
+    ,
+    managedDepartmentIds: Array.isArray(data.managed_department_ids) ? data.managed_department_ids.map(String) : undefined,
+    managedPositionIds: Array.isArray(data.managed_position_ids) ? data.managed_position_ids.map(String) : undefined,
+    managedBranchIds: Array.isArray(data.managed_branch_ids) ? data.managed_branch_ids.map(String) : undefined,
+    managedBranchNames: Array.isArray(data.managed_branch_names) ? data.managed_branch_names : undefined,
+    managedDepartmentNames: Array.isArray(data.managed_department_names) ? data.managed_department_names : undefined,
+    managedPositionNames: Array.isArray(data.managed_position_names) ? data.managed_position_names : undefined,
+    permissions: Array.isArray(data.permissions) ? data.permissions : undefined
+  };
+  
+  // Final validation: đảm bảo đúng role theo cấp
+  if (mappedUser.roleName) {
+    const rn = String(mappedUser.roleName).toLowerCase().trim();
+    if (['super_admin', 'branch_admin', 'admin'].includes(rn)) {
+      mappedUser.role = UserRole.ADMIN;
+    } else if (['staff', 'department_head', 'department_manager', 'position_manager'].includes(rn)) {
+      mappedUser.role = UserRole.STAFF;
+    }
+  }
+  
+  return mappedUser;
+};
 
 const mapBranchFromApi = (data: any): Branch => ({
   id: String(data.id),
   name: data.name,
   address: data.address,
   description: data.description || undefined,
-  usersCount: data.users_count || 0
+  usersCount: data.users_count || 0,
+  managerId: data.manager_id ? String(data.manager_id) : undefined,
+  managerName: data.manager_name || undefined,
+  managerUsername: data.manager_username || undefined
 });
 
 const mapDepartmentFromApi = (data: any): Department => ({
@@ -177,16 +252,52 @@ const mapDepartmentFromApi = (data: any): Department => ({
   name: data.name,
   description: data.description || undefined,
   usersCount: data.users_count || 0,
-  shiftsCount: data.shifts_count || 0
+  shiftsCount: data.shifts_count || 0,
+  managerId: data.manager_id ? String(data.manager_id) : undefined,
+  managerName: data.manager_name || undefined,
+  managerUsername: data.manager_username || undefined,
+  ipAddress: data.ip_address || undefined,
+  branchId: data.branch_id ? String(data.branch_id) : undefined,
+  branchName: data.branch_name || undefined,
+  workDays: Array.isArray(data.work_days) ? data.work_days.map(Number) : [1, 2, 3, 4, 5],
 });
 
 const mapSessionFromApi = (data: any): WorkSession => {
-  if (!data || (!data.id && !data.start_time)) throw new Error("Invalid session data structure");
+  if (!data || !data.id) throw new Error("Invalid session data structure");
   
   const startTimeVal = data.start_time || data.startTime;
   const endTimeVal = data.end_time || data.endTime;
-  const startTime = new Date(startTimeVal).getTime();
-  const endTime = endTimeVal ? new Date(endTimeVal).getTime() : null;
+  
+  // Validate và parse date safely
+  let startTime: number;
+  let endTime: number | null = null;
+  
+  try {
+    if (!startTimeVal || startTimeVal === undefined || startTimeVal === null) {
+      // Nếu không có start_time, skip session này (return null và filter out)
+      throw new Error("Missing start_time");
+    }
+    const startDate = new Date(startTimeVal);
+    if (isNaN(startDate.getTime())) {
+      throw new Error(`Invalid start_time: ${startTimeVal}`);
+    }
+    startTime = startDate.getTime();
+  } catch (e) {
+    // Return null để filter out sessions không hợp lệ
+    throw new Error(`Failed to parse start_time: ${startTimeVal || 'undefined'}`);
+  }
+  
+  if (endTimeVal) {
+    try {
+      const endDate = new Date(endTimeVal);
+      if (!isNaN(endDate.getTime())) {
+        endTime = endDate.getTime();
+      }
+    } catch (e) {
+      // Ignore invalid end_time, set to null
+      endTime = null;
+    }
+  }
   
   // Handle duration: nếu có duration_minutes từ Rails, convert thành giây
   let duration = 0;
@@ -205,7 +316,21 @@ const mapSessionFromApi = (data: any): WorkSession => {
     startTime: startTime,
     endTime: endTime,
     duration: duration,
-    dateStr: data.date_str || data.dateStr || new Date(startTime).toISOString().split('T')[0],
+    dateStr: (() => {
+      if (data.date_str) return data.date_str;
+      if (data.dateStr) return data.dateStr;
+      if (startTime && !isNaN(startTime)) {
+        try {
+          const date = new Date(startTime);
+          if (!isNaN(date.getTime())) {
+            return date.toISOString().split('T')[0];
+          }
+        } catch (e) {
+          // Ignore
+        }
+      }
+      return '';
+    })(),
     workShiftId: data.work_shift_id ? String(data.work_shift_id) : undefined,
     shiftName: data.shift_name || undefined,
     shiftRegistrationId: data.shift_registration_id ? String(data.shift_registration_id) : undefined,
@@ -235,8 +360,10 @@ export const login = async (username: string, password: string, remember: boolea
     const userObj = data.user || data;
     const tokenStr = data.token || 'no-token';
 
+    const mappedUser = mapUserFromApi(userObj);
+
     const authData: AuthResponse = {
-        user: mapUserFromApi(userObj), 
+        user: mappedUser, 
         token: tokenStr
     };
     
@@ -286,6 +413,16 @@ export const getUsers = async (): Promise<User[]> => {
         console.error("Get users failed:", e);
         return [];
     }
+};
+
+export const getMyTeam = async (): Promise<User[]> => {
+  try {
+    const data = await fetchAPI('/users/my_team');
+    return Array.isArray(data) ? data.map(mapUserFromApi) : [];
+  } catch (e) {
+    console.error("Get my team failed:", e);
+    return [];
+  }
 };
 
 export const createUser = async (userData: {
@@ -384,7 +521,12 @@ export const getCurrentSession = async (userId: string): Promise<WorkSession | u
     try {
         const data = await fetchAPI(`/work_sessions/active?user_id=${userId}`);
         if (!data || Object.keys(data).length === 0) return undefined;
-        return mapSessionFromApi(data);
+        try {
+            return mapSessionFromApi(data);
+        } catch (e) {
+            // Skip nếu session có invalid start_time
+            return undefined;
+        }
     } catch (e: any) {
         if (e.message && (e.message.includes('404') || e.message.includes('null'))) {
             return undefined;
@@ -395,23 +537,127 @@ export const getCurrentSession = async (userId: string): Promise<WorkSession | u
 };
 
 export const getUserHistory = async (userId: string): Promise<WorkSession[]> => {
-    const data = await fetchAPI(`/work_sessions?user_id=${userId}`);
-    return Array.isArray(data) ? data.map(mapSessionFromApi) : [];
+    try {
+        const data = await fetchAPI(`/work_sessions?user_id=${userId}`);
+        if (!Array.isArray(data)) return [];
+        
+        // Filter out sessions với invalid start_time
+        const validSessions: WorkSession[] = [];
+        for (const item of data) {
+            try {
+                const session = mapSessionFromApi(item);
+                validSessions.push(session);
+            } catch (e) {
+                // Skip sessions với invalid start_time
+                continue;
+            }
+        }
+        return validSessions;
+    } catch (e) {
+        console.error("Get user history failed:", e);
+        return [];
+    }
 };
 
 export const getAllHistory = async (): Promise<WorkSession[]> => {
-    const data = await fetchAPI('/work_sessions');
-    const result = Array.isArray(data) ? data.map(mapSessionFromApi) : [];
-    return result;
+    try {
+        const data = await fetchAPI('/work_sessions');
+        if (!Array.isArray(data)) return [];
+        
+        // Filter out sessions với invalid start_time
+        const validSessions: WorkSession[] = [];
+        for (const item of data) {
+            try {
+                const session = mapSessionFromApi(item);
+                validSessions.push(session);
+            } catch (e) {
+                // Skip sessions với invalid start_time
+                continue;
+            }
+        }
+        return validSessions;
+    } catch (e) {
+        console.error("Get all history failed:", e);
+        return [];
+    }
+};
+
+export const adminUpdateWorkSession = async (id: string, updates: {
+    startTime?: string;
+    endTime?: string | null;
+    workSummary?: string;
+    challenges?: string;
+    suggestions?: string;
+    notes?: string;
+}): Promise<WorkSession> => {
+    const payload: any = {
+        work_session: {}
+    };
+    
+    if (updates.startTime !== undefined) {
+        payload.work_session.start_time = updates.startTime;
+    }
+    if (updates.endTime !== undefined) {
+        payload.work_session.end_time = updates.endTime;
+    }
+    if (updates.workSummary !== undefined) {
+        payload.work_session.work_summary = updates.workSummary;
+    }
+    if (updates.challenges !== undefined) {
+        payload.work_session.challenges = updates.challenges;
+    }
+    if (updates.suggestions !== undefined) {
+        payload.work_session.suggestions = updates.suggestions;
+    }
+    if (updates.notes !== undefined) {
+        payload.work_session.notes = updates.notes;
+    }
+    
+    const data = await fetchAPI(`/work_sessions/${id}/admin_update`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+    });
+    
+    return mapSessionFromApi(data);
 };
 
 // --- WORK SHIFT MANAGEMENT (ADMIN) ---
 
+/**
+ * Chuẩn hóa giá trị giờ từ backend về định dạng "HH:MM".
+ * Xử lý các dạng:
+ *   - "09:00"            → "09:00"
+ *   - "09:00:00"         → "09:00"
+ *   - "2025-01-01T02:00:00Z" (UTC datetime) → giờ local của browser (ví dụ "09:00" ở UTC+7)
+ *   - "2025-01-01T09:00:00+07:00"           → "09:00"
+ */
+const normalizeShiftTime = (val: any, fallback = '08:00'): string => {
+  if (!val) return fallback;
+  const str = String(val).trim();
+  // ISO datetime hoặc có chứa date part → parse thành Date để lấy giờ local
+  if (str.length > 8 && (str.includes('T') || (str.includes('-') && str.includes(':')))) {
+    try {
+      const d = new Date(str);
+      if (!isNaN(d.getTime())) {
+        const h = String(d.getHours()).padStart(2, '0');
+        const m = String(d.getMinutes()).padStart(2, '0');
+        return `${h}:${m}`;
+      }
+    } catch {
+      // fall through
+    }
+  }
+  // "HH:MM" hoặc "HH:MM:SS"
+  const match = str.match(/^(\d{1,2}):(\d{2})/);
+  if (match) return `${match[1].padStart(2, '0')}:${match[2]}`;
+  return fallback;
+};
+
 const mapShiftFromApi = (data: any): WorkShift => ({
   id: String(data.id),
   name: data.name || 'Shift',
-  startTime: data.start_time || data.startTime || '08:00',
-  endTime: data.end_time || data.endTime || '17:00',
+  startTime: normalizeShiftTime(data.start_time ?? data.startTime, '08:00'),
+  endTime:   normalizeShiftTime(data.end_time   ?? data.endTime,   '17:00'),
   lateThreshold: data.late_threshold || data.lateThreshold || 30,
   departmentId: data.department_id ? String(data.department_id) : undefined,
   departmentName: data.department_name || undefined,
@@ -484,17 +730,23 @@ export interface UserProfile extends ProfileData {
   avatarUrl?: string;
 }
 
+export const getUser = async (userId: string): Promise<User> => {
+  const data = await fetchAPI(`/users/${userId}`);
+  return mapUserFromApi(data);
+};
+
 export const getUserProfile = async (userId: string): Promise<UserProfile> => {
   const data = await fetchAPI(`/users/${userId}`);
+  const mapped = mapUserFromApi(data);
   return {
-    id: String(data.id),
-    username: data.username,
-    fullName: data.full_name || '',
-    role: data.role === 'admin' ? UserRole.ADMIN : UserRole.STAFF,
+    id: mapped.id,
+    username: mapped.username,
+    fullName: mapped.fullName,
+    role: mapped.role,
     address: data.address || '',
     phone: data.phone || '',
     birthday: data.birthday || '',
-    avatarUrl: data.avatar_url || ''
+    avatarUrl: data.avatar_url || data.avatar || ''
   };
 };
 
@@ -591,15 +843,17 @@ export const getBranch = async (id: string): Promise<Branch | null> => {
 };
 
 export const createBranch = async (branch: Omit<Branch, 'id' | 'usersCount'>): Promise<Branch> => {
+  const branchData: any = {
+    name: branch.name,
+    address: branch.address,
+    description: branch.description
+  };
+  if (branch.managerId) {
+    branchData.manager_id = parseInt(branch.managerId);
+  }
   const data = await fetchAPI('/branches', {
     method: 'POST',
-    body: JSON.stringify({
-      branch: {
-        name: branch.name,
-        address: branch.address,
-        description: branch.description
-      }
-    })
+    body: JSON.stringify({ branch: branchData })
   });
   return mapBranchFromApi(data);
 };
@@ -611,9 +865,25 @@ export const updateBranch = async (id: string, branch: Partial<Branch>): Promise
       branch: {
         name: branch.name,
         address: branch.address,
-        description: branch.description
+        description: branch.description,
+        manager_id: branch.managerId ? parseInt(branch.managerId) : null
       }
     })
+  });
+  return mapBranchFromApi(data);
+};
+
+export const assignBranchManager = async (id: string, managerId: string): Promise<Branch> => {
+  const data = await fetchAPI(`/branches/${id}/assign_manager`, {
+    method: 'POST',
+    body: JSON.stringify({ manager_id: parseInt(managerId) })
+  });
+  return mapBranchFromApi(data);
+};
+
+export const removeBranchManager = async (id: string): Promise<Branch> => {
+  const data = await fetchAPI(`/branches/${id}/remove_manager`, {
+    method: 'DELETE'
   });
   return mapBranchFromApi(data);
 };
@@ -624,14 +894,30 @@ export const deleteBranch = async (id: string): Promise<void> => {
 
 // --- STAFF MANAGEMENT (ADMIN) ---
 
-export const getAllStaff = async (): Promise<User[]> => {
+export const getAllStaff = async (includeDeactive = false): Promise<User[]> => {
   try {
-    const data = await fetchAPI('/users');
+    const url = includeDeactive ? '/users?include_deactive=true' : '/users';
+    const data = await fetchAPI(url);
     return Array.isArray(data) ? data.map(mapUserFromApi) : [];
   } catch (e) {
     console.error("Get all staff failed:", e);
     return [];
   }
+};
+
+export const getUsersByRole = async (roleId: string): Promise<User[]> => {
+  try {
+    const data = await fetchAPI(`/users?role_id=${roleId}&include_deactive=true`);
+    return Array.isArray(data) ? data.map(mapUserFromApi) : [];
+  } catch (e) {
+    console.error("Get users by role failed:", e);
+    return [];
+  }
+};
+
+export const reactivateStaff = async (id: string): Promise<User> => {
+  const data = await fetchAPI(`/users/${id}/reactivate`, { method: 'PATCH' });
+  return mapUserFromApi(data.user || data);
 };
 
 export const getStaffById = async (id: string): Promise<User | null> => {
@@ -651,30 +937,63 @@ export const deactivateStaff = async (id: string): Promise<User> => {
   return mapUserFromApi(data.user || data);
 };
 
-export const updateStaff = async (id: string, userData: Partial<User>): Promise<User> => {
+export const softDeleteUser = async (id: string): Promise<{ message: string; userId: string }> => {
+  const data = await fetchAPI(`/users/${id}`, {
+    method: 'DELETE'
+  });
+  return { message: data.message, userId: String(data.user_id || id) };
+};
+
+export const updateStaff = async (
+  id: string,
+  userData: Partial<User> & {
+    managedBranchIds?: string[];
+    managedDepartmentIds?: string[];
+    managedPositionIds?: string[];
+    roleId?: string | number;
+  }
+): Promise<User> => {
   const payload: any = {
-        full_name: userData.fullName,
-        role: userData.role?.toLowerCase(),
-        branch_id: userData.branchId ? Number(userData.branchId) : null,
-        department_id: userData.departmentId ? Number(userData.departmentId) : null,
+    full_name: userData.fullName,
+    role: userData.role?.toLowerCase(),
+    department_id: userData.departmentId ? Number(userData.departmentId) : null,
     position_id: userData.positionId ? Number(userData.positionId) : null,
-        work_address: userData.workAddress,
-        address: userData.address,
-        phone: userData.phone,
+    work_address: userData.workAddress,
+    address: userData.address,
+    phone: userData.phone,
     birthday: userData.birthday,
     work_schedule_type: userData.workScheduleType || 'both_shifts'
   };
-  
+
+  // role_id (RBAC): gửi khi có
+  if (userData.roleId !== undefined) {
+    payload.role_id = userData.roleId ? Number(userData.roleId) : null;
+  }
+
+  // Chỉ gửi branch_id nếu có giá trị (tránh vô tình null hóa chi nhánh)
+  if (userData.branchId !== undefined) {
+    payload.branch_id = userData.branchId ? Number(userData.branchId) : null;
+  }
+
+  // Managed scope arrays (nhiều quản lý trên cùng entity)
+  if (userData.managedBranchIds !== undefined) {
+    payload.managed_branch_ids = userData.managedBranchIds.map(Number);
+  }
+  if (userData.managedDepartmentIds !== undefined) {
+    payload.managed_department_ids = userData.managedDepartmentIds.map(Number);
+  }
+  if (userData.managedPositionIds !== undefined) {
+    payload.managed_position_ids = userData.managedPositionIds.map(Number);
+  }
+
   // Add password if provided (admin can update password)
   if ((userData as any).password) {
     payload.password = (userData as any).password;
   }
-  
+
   const data = await fetchAPI(`/users/${id}`, {
     method: 'PATCH',
-    body: JSON.stringify({
-      user: payload
-    })
+    body: JSON.stringify({ user: payload })
   });
   return mapUserFromApi(data);
 };
@@ -702,27 +1021,59 @@ export const getDepartment = async (id: string): Promise<Department | null> => {
 };
 
 export const createDepartment = async (department: Omit<Department, 'id' | 'usersCount' | 'shiftsCount'>): Promise<Department> => {
+  const deptData: any = {
+    name: department.name,
+    description: department.description
+  };
+  if (department.managerId) {
+    deptData.manager_id = parseInt(department.managerId);
+  }
+  if (department.ipAddress) {
+    deptData.ip_address = department.ipAddress;
+  }
+  if (department.branchId) {
+    deptData.branch_id = parseInt(department.branchId);
+  }
+  if (department.workDays) {
+    deptData.work_days = department.workDays;
+  }
   const data = await fetchAPI('/departments', {
     method: 'POST',
-    body: JSON.stringify({
-      department: {
-        name: department.name,
-        description: department.description
-      }
-    })
+    body: JSON.stringify({ department: deptData })
   });
   return mapDepartmentFromApi(data);
 };
 
 export const updateDepartment = async (id: string, department: Partial<Department>): Promise<Department> => {
+  const body: any = {
+    name: department.name,
+    description: department.description,
+    manager_id: department.managerId ? parseInt(department.managerId) : null,
+    ip_address: department.ipAddress || null,
+    work_days: department.workDays ?? null,
+  };
+  // Chỉ gửi branch_id nếu được truyền tường minh, tránh vô tình xóa branch_id hiện tại
+  if (department.branchId !== undefined) {
+    body.branch_id = department.branchId ? parseInt(department.branchId) : null;
+  }
   const data = await fetchAPI(`/departments/${id}`, {
     method: 'PATCH',
-    body: JSON.stringify({
-      department: {
-        name: department.name,
-        description: department.description
-      }
-    })
+    body: JSON.stringify({ department: body })
+  });
+  return mapDepartmentFromApi(data);
+};
+
+export const assignDepartmentManager = async (id: string, managerId: string): Promise<Department> => {
+  const data = await fetchAPI(`/departments/${id}/assign_manager`, {
+    method: 'POST',
+    body: JSON.stringify({ manager_id: parseInt(managerId) })
+  });
+  return mapDepartmentFromApi(data);
+};
+
+export const removeDepartmentManager = async (id: string): Promise<Department> => {
+  const data = await fetchAPI(`/departments/${id}/remove_manager`, {
+    method: 'DELETE'
   });
   return mapDepartmentFromApi(data);
 };
@@ -742,7 +1093,10 @@ const mapPositionFromApi = (data: any): Position => ({
   departmentId: data.department_id ? String(data.department_id) : undefined,
   departmentName: data.department_name || undefined,
   level: data.level || PositionLevel.STAFF_LEVEL,
-  usersCount: data.users_count || 0
+  usersCount: data.users_count || 0,
+  managerId: data.manager_id ? String(data.manager_id) : undefined,
+  managerName: data.manager_name || undefined,
+  managerUsername: data.manager_username || undefined
 });
 
 export const getPositions = async (branchId?: string, departmentId?: string): Promise<Position[]> => {
@@ -772,33 +1126,52 @@ export const getPosition = async (id: string): Promise<Position | null> => {
 };
 
 export const createPosition = async (position: Omit<Position, 'id' | 'usersCount' | 'branchName' | 'departmentName'>): Promise<Position> => {
+  const positionData: any = {
+    name: position.name,
+    description: position.description,
+    branch_id: position.branchId ? Number(position.branchId) : null,
+    department_id: position.departmentId ? Number(position.departmentId) : null
+  };
+  if (position.level !== undefined) positionData.level = position.level;
+  if (position.managerId) {
+    positionData.manager_id = parseInt(position.managerId);
+  }
   const data = await fetchAPI('/positions', {
     method: 'POST',
-    body: JSON.stringify({
-      position: {
-        name: position.name,
-        description: position.description,
-        branch_id: position.branchId ? Number(position.branchId) : null,
-        department_id: position.departmentId ? Number(position.departmentId) : null,
-        level: position.level
-      }
-    })
+    body: JSON.stringify({ position: positionData })
   });
   return mapPositionFromApi(data);
 };
 
 export const updatePosition = async (id: string, position: Partial<Position>): Promise<Position> => {
+  const positionData: any = {
+    name: position.name,
+    description: position.description,
+    branch_id: position.branchId ? Number(position.branchId) : null,
+    department_id: position.departmentId ? Number(position.departmentId) : null
+  };
+  if (position.level !== undefined) positionData.level = position.level;
+  if (position.managerId !== undefined) {
+    positionData.manager_id = position.managerId ? parseInt(position.managerId) : null;
+  }
   const data = await fetchAPI(`/positions/${id}`, {
     method: 'PATCH',
-    body: JSON.stringify({
-      position: {
-        name: position.name,
-        description: position.description,
-        branch_id: position.branchId ? Number(position.branchId) : null,
-        department_id: position.departmentId ? Number(position.departmentId) : null,
-        level: position.level
-      }
-    })
+    body: JSON.stringify({ position: positionData })
+  });
+  return mapPositionFromApi(data);
+};
+
+export const assignPositionManager = async (id: string, managerId: string): Promise<Position> => {
+  const data = await fetchAPI(`/positions/${id}/assign_manager`, {
+    method: 'POST',
+    body: JSON.stringify({ manager_id: parseInt(managerId) })
+  });
+  return mapPositionFromApi(data);
+};
+
+export const removePositionManager = async (id: string): Promise<Position> => {
+  const data = await fetchAPI(`/positions/${id}/remove_manager`, {
+    method: 'DELETE'
   });
   return mapPositionFromApi(data);
 };
@@ -827,6 +1200,23 @@ const mapShiftRegistrationFromApi = (data: any): ShiftRegistration => ({
   approvedByName: data.approved_by_name || undefined,
   approvedAt: data.approved_at || undefined,
   createdAt: data.created_at || undefined
+});
+
+const mapShiftRegistrationDeletionAuditFromApi = (data: any): ShiftRegistrationDeletionAudit => ({
+  id: String(data.id),
+  createdAt: data.created_at || data.createdAt,
+  weekStart: data.week_start || data.weekStart,
+  workDate: data.work_date || data.workDate,
+  source: data.source || undefined,
+  reason: data.reason || undefined,
+  actorId: data.actor_id ? String(data.actor_id) : undefined,
+  actorName: data.actor_name || undefined,
+  targetUserId: data.target_user_id ? String(data.target_user_id) : undefined,
+  targetUserName: data.target_user_name || undefined,
+  workShiftId: data.work_shift_id ? String(data.work_shift_id) : undefined,
+  workShiftName: data.work_shift_name || undefined,
+  previousStatus: data.previous_status || undefined,
+  metadata: data.metadata || undefined
 });
 
 export const getShiftRegistrations = async (params?: {
@@ -972,18 +1362,32 @@ export const deleteShiftRegistration = async (id: string): Promise<void> => {
   await fetchAPI(`/shift_registrations/${id}`, { method: 'DELETE' });
 };
 
-export const approveShiftRegistration = async (id: string, adminId: string, note?: string): Promise<ShiftRegistration> => {
+export const approveShiftRegistration = async (id: string, adminId?: string, note?: string): Promise<ShiftRegistration> => {
   const data = await fetchAPI(`/shift_registrations/${id}/approve`, {
     method: 'POST',
-    body: JSON.stringify({ admin_id: Number(adminId), note })
+    body: JSON.stringify({ admin_id: adminId ? Number(adminId) : undefined, note })
   });
   return mapShiftRegistrationFromApi(data);
 };
 
-export const rejectShiftRegistration = async (id: string, adminId: string, note?: string): Promise<{ message: string; id: string }> => {
+export const getMyTeamShiftRegistrations = async (weekStart?: string): Promise<ShiftRegistration[]> => {
+  try {
+    let url = '/shift_registrations/my_team';
+    if (weekStart) {
+      url += `?week_start=${weekStart}`;
+    }
+    const data = await fetchAPI(url);
+    return Array.isArray(data) ? data.map(mapShiftRegistrationFromApi) : [];
+  } catch (e) {
+    console.error("Get my team shift registrations failed:", e);
+    return [];
+  }
+};
+
+export const rejectShiftRegistration = async (id: string, adminId?: string, note?: string): Promise<{ message: string; id: string }> => {
   const data = await fetchAPI(`/shift_registrations/${id}/reject`, {
     method: 'POST',
-    body: JSON.stringify({ admin_id: Number(adminId), note })
+    body: JSON.stringify({ admin_id: adminId ? Number(adminId) : undefined, note })
   });
   return data;
 };
@@ -1112,15 +1516,22 @@ export const adminQuickDeleteShiftRegistration = async (data: {
   userId: string;
   workShiftId: string;
   workDate: string;
+  reason?: string;
 }): Promise<{ message: string; deleted_count: number }> => {
   return await fetchAPI('/shift_registrations/admin_quick_delete', {
     method: 'POST',
     body: JSON.stringify({
       user_id: Number(data.userId),
       work_shift_id: Number(data.workShiftId),
-      work_date: data.workDate
+      work_date: data.workDate,
+      reason: data.reason
     })
   });
+};
+
+export const getShiftRegistrationDeletionHistory = async (weekStart: string): Promise<ShiftRegistrationDeletionAudit[]> => {
+  const data = await fetchAPI(`/shift_registrations/deletion_history?week_start=${weekStart}`);
+  return Array.isArray(data) ? data.map(mapShiftRegistrationDeletionAuditFromApi) : [];
 };
 
 // --- SETTINGS ---
@@ -1225,6 +1636,31 @@ export const getPendingForgotCheckinRequests = async (): Promise<ForgotCheckinRe
   }));
 };
 
+export const getMyTeamForgotCheckinRequests = async (): Promise<ForgotCheckinRequest[]> => {
+  try {
+    const data = await fetchAPI('/forgot_checkin_requests/my_team');
+    return Array.isArray(data) ? data.map((r: any) => ({
+      id: r.id.toString(),
+      userId: r.user_id.toString(),
+      userName: r.user_name,
+      requestDate: r.request_date,
+      requestType: r.request_type,
+      requestTime: r.request_time,
+      reason: r.reason,
+      status: r.status,
+      approvedById: r.approved_by_id?.toString(),
+      approvedByName: r.approved_by_name,
+      approvedAt: r.approved_at,
+      rejectedReason: r.rejected_reason,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at
+    })) : [];
+  } catch (e) {
+    console.error("Get my team forgot checkin requests failed:", e);
+    return [];
+  }
+};
+
 export const createForgotCheckinRequest = async (request: {
   requestDate: string;
   requestType: 'checkin' | 'checkout';
@@ -1319,6 +1755,7 @@ const mapRoleFromApi = (data: any): Role => ({
   name: data.name,
   description: data.description || '',
   isSystem: data.is_system || false,
+  isSuperAdmin: data.is_super_admin === true,
   permissionsCount: data.permissions_count,
   usersCount: data.users_count,
   permissions: data.permissions ? data.permissions.map(mapPermissionFromApi) : []
